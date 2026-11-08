@@ -24,7 +24,17 @@ Vai pedir a senha do Mac. Não aparece nada enquanto digita, e isso é normal.
 - Windows: dois cliques em `INSTALAR.bat`.
 - Mac: dois cliques em `INSTALAR.command`. Se o macOS bloquear: botão direito › Abrir › Abrir. Se o arquivo perdeu a permissão (acontece ao copiar pelo Windows), use no Terminal: `sudo bash /Volumes/NOME_DO_PENDRIVE/caaal-kit/instalar.sh`
 
-O menu tem três opções: instalação de programas (Windows ou Mac), correção de erros e sair.
+O menu tem: instalação de programas (Windows ou Mac), correção de erros, desinstalar programas (por enquanto só no Windows) e sair.
+
+### Desinstalar programas
+
+Remove só os **programas do kit**: PJeOffice, SafeNet, SafeSign e Web Signer. Os de uso pessoal (Chrome, Firefox, WinRAR) **nunca** são removidos e nem aparecem na lista: estão em `$NaoDesinstalar`, no `instalar.ps1`. Para proteger outro programa, acrescente o nome nessa lista.
+
+- Dá para escolher um programa ou **[T] Todos** os que estão instalados. O kit mostra o que vai remover e pede confirmação.
+- Remove sem janelas, fechando antes o programa se estiver aberto (o PJeOffice fica em segundo plano).
+- Ao remover o Web Signer, tira também a extensão forçada dos navegadores. Só a entrada do Web Signer sai: outras extensões forçadas continuam.
+- A cadeia de certificados ICP-Brasil **não** é removida: ela não atrapalha e é usada por outros programas e sites.
+- Log em `C:\ProgramData\TI\logs\desinstalar-...txt`.
 
 ## O que tem aqui
 
