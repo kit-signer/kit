@@ -273,6 +273,46 @@ instalar_arquivo() {
 DIR_EXT_CHROME="/Library/Application Support/Google/Chrome/External Extensions"
 FX="/Applications/Firefox.app"
 
+# Ativa automaticamente os toggles internos da extensao Web Signer:
+#   - Cripto Dispositivos (PKCS #11): Tokens SafeNet, Dispositivos SafeSign AET
+#   - Avancadas: Habilitar logs detalhados (trace = true)
+configurar_toggles_websigner() {
+  local home_u="/Users/$USUARIO_TELA"
+  local base_cr="$home_u/Library/Application Support/Google/Chrome"
+  local base_fx="$home_u/Library/Application Support/Firefox/Profiles"
+  pkill -x "Google Chrome" 2>/dev/null; pkill -x firefox 2>/dev/null; sleep 1
+
+  local manifest_b64="lXy5xSIAAQEabGV2ZWxkYi5CeXRld2lzZUNvbXBhcmF0b3ICAAMCBAA="
+  local log_mac_b64="XSYwaUcAAQEAAAAAAAAAAgAAAAEGcGtjczExJlsibGliZVRva2VuLmR5bGliIiwibGliYWV0cGtzcy5keWxpYiJdAQV0cmFjZQR0cnVl"
+  local p dir_db
+
+  mkdir -p "$base_cr/Default"
+  for p in "$base_cr"/Default "$base_cr"/Profile\ *; do
+    [ -d "$p" ] || continue
+    dir_db="$p/Local Extension Settings/$WEBSIGNER_CHROME_ID"
+    if grep -q "libeToken.dylib" "$dir_db"/*.log "$dir_db"/*.ldb 2>/dev/null && \
+       grep -q "trace" "$dir_db"/*.log "$dir_db"/*.ldb 2>/dev/null; then
+      continue
+    fi
+    mkdir -p "$dir_db" && rm -f "$dir_db"/*
+    echo "$manifest_b64" | base64 -D > "$dir_db/MANIFEST-000001"
+    printf 'MANIFEST-000001\n' > "$dir_db/CURRENT"
+    echo "$log_mac_b64" | base64 -D > "$dir_db/000003.log"
+  done
+  chown -R "$USUARIO_TELA" "$base_cr" 2>/dev/null
+
+  if [ -d "$base_fx" ]; then
+    for p in "$base_fx"/*; do
+      [ -d "$p" ] || continue
+      grep -q "ExtensionStorageIDB.migrated.$WEBSIGNER_FIREFOX_ID" "$p/prefs.js" 2>/dev/null && continue
+      mkdir -p "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"
+      printf '{"pkcs11":["libeToken.dylib","libaetpkss.dylib"],"trace":true}\n' > "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID/storage.js"
+      chown -R "$USUARIO_TELA" "$p/browser-extension-data" 2>/dev/null
+    done
+  fi
+  echo "Web Signer: toggles (SafeNet, SafeSign e logs detalhados) ativados."
+}
+
 aplicar_extensao() {
   # Chrome: "extensao externa" -> o Chrome instala e pede para o usuario ATIVAR
   mkdir -p "$DIR_EXT_CHROME"
@@ -281,16 +321,18 @@ aplicar_extensao() {
   echo "Chrome: extensao registrada (ao abrir, clique em 'Ativar extensao')."
 
   # Firefox: policies.json dentro do app (forcada, sem o usuario precisar aceitar)
-  if [ ! -d "$FX" ]; then aviso "Firefox nao encontrado; politica nao aplicada."; return; fi
-  local xpi_arq xpi_sha xpi
-  IFS='|' read -r xpi_arq xpi_sha <<< "$WEBSIGNER_XPI"
-  xpi="$(obter_arquivo "$xpi_arq" "$xpi_sha")"
-  [ -n "$xpi" ] || return
-  cp -f "$xpi" "$PASTA_TI/websigner.xpi" && chmod 644 "$PASTA_TI/websigner.xpi"
-  local DIST="$FX/Contents/Resources/distribution"
-  mkdir -p "$DIST"
-  [ -f "$DIST/policies.json" ] && cp -f "$DIST/policies.json" "$DIST/policies.json.bak"
-  cat > "$DIST/policies.json" <<JSON
+  if [ ! -d "$FX" ]; then
+    aviso "Firefox nao encontrado; politica nao aplicada."
+  else
+    local xpi_arq xpi_sha xpi
+    IFS='|' read -r xpi_arq xpi_sha <<< "$WEBSIGNER_XPI"
+    xpi="$(obter_arquivo "$xpi_arq" "$xpi_sha")"
+    if [ -n "$xpi" ]; then
+      cp -f "$xpi" "$PASTA_TI/websigner.xpi" && chmod 644 "$PASTA_TI/websigner.xpi"
+      local DIST="$FX/Contents/Resources/distribution"
+      mkdir -p "$DIST"
+      [ -f "$DIST/policies.json" ] && cp -f "$DIST/policies.json" "$DIST/policies.json.bak"
+      cat > "$DIST/policies.json" <<JSON
 {
   "policies": {
     "ExtensionSettings": {
@@ -302,7 +344,10 @@ aplicar_extensao() {
   }
 }
 JSON
-  echo "Firefox: extensao forcada."
+      echo "Firefox: extensao forcada."
+    fi
+  fi
+  configurar_toggles_websigner
 }
 
 

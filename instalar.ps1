@@ -331,6 +331,53 @@ function Pasta-Firefox {
         Where-Object { Test-Path "$_\firefox.exe" } | Select-Object -First 1
 }
 
+# Ativa automaticamente os toggles internos da extensao Web Signer:
+#   - Cripto Dispositivos (PKCS #11): Tokens SafeNet, Dispositivos SafeSign AET, Smartcards Athena IDProtect
+#   - Avancadas: Habilitar logs detalhados (trace = true)
+function Configurar-TogglesWebSigner {
+    $perfil = Perfil-UsuarioTela
+    Fechar-Navegadores
+
+    # LevelDB (MANIFEST-000001 + 000003.log) com:
+    #   pkcs11 = ["eTPKCS11.dll","aetpkss1.dll","asepkcs.dll"]
+    #   trace  = true
+    $manifestB64 = "lXy5xSIAAQEabGV2ZWxkYi5CeXRld2lzZUNvbXBhcmF0b3ICAAMCBAA="
+    $logWinB64   = "O4Mwm04AAQEAAAAAAAAAAgAAAAEGcGtjczExLVsiZVRQS0NTMTEuZGxsIiwiYWV0cGtzczEuZGxsIiwiYXNlcGtjcy5kbGwiXQEFdHJhY2UEdHJ1ZQ=="
+
+    $perfis = @(Pastas-PerfisChromium $perfil)
+    foreach ($base in "$perfil\AppData\Local\Google\Chrome\User Data", "$perfil\AppData\Local\Microsoft\Edge\User Data") {
+        if ((Test-Path (Split-Path $base)) -and ($perfis -notcontains "$base\Default")) { $perfis += "$base\Default" }
+    }
+
+    foreach ($p in ($perfis | Select-Object -Unique)) {
+        $dirDb = Join-Path $p "Local Extension Settings\$WebSignerChromeId"
+        $jaConfigurado = Get-ChildItem $dirDb -Include *.log, *.ldb -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                $txt = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($_.FullName))
+                $txt -match 'eTPKCS11\.dll' -and $txt -match 'aetpkss1\.dll' -and $txt -match 'asepkcs\.dll' -and $txt -match 'trace'
+            }
+        if ($jaConfigurado) { continue }
+
+        New-Item -ItemType Directory -Path $dirDb -Force | Out-Null
+        Remove-Item "$dirDb\*" -Force -ErrorAction SilentlyContinue
+        [IO.File]::WriteAllBytes("$dirDb\MANIFEST-000001", [Convert]::FromBase64String($manifestB64))
+        [IO.File]::WriteAllBytes("$dirDb\CURRENT", [Text.Encoding]::ASCII.GetBytes("MANIFEST-000001`n"))
+        [IO.File]::WriteAllBytes("$dirDb\000003.log", [Convert]::FromBase64String($logWinB64))
+    }
+
+    # Firefox: grava storage.js para o Firefox importar na primeira abertura
+    $jsonFx = '{"pkcs11":["eTPKCS11.dll","aetpkss1.dll","asepkcs.dll"],"trace":true}'
+    foreach ($d in (Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue)) {
+        $prefs = Join-Path $d.FullName "prefs.js"
+        if ((Test-Path $prefs) -and ((Get-Content $prefs -Raw) -like "*ExtensionStorageIDB.migrated.$WebSignerFirefoxId*")) { continue }
+        $dirExt = Join-Path $d.FullName "browser-extension-data\$WebSignerFirefoxId"
+        New-Item -ItemType Directory -Path $dirExt -Force | Out-Null
+        [IO.File]::WriteAllText("$dirExt\storage.js", $jsonFx)
+    }
+
+    Write-Host "Web Signer: toggles (SafeNet, SafeSign, Athena e logs detalhados) ativados."
+}
+
 function Aplicar-ExtensaoWebSigner {
     $valorLoja = "$WebSignerChromeId;$ChromeStoreUpdate"
     Add-ListaForcada "HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist" $valorLoja
@@ -341,13 +388,15 @@ function Aplicar-ExtensaoWebSigner {
     $pastaFirefox = Pasta-Firefox
     if (-not $pastaFirefox) {
         Write-Host "Firefox nao encontrado; politica nao aplicada." -ForegroundColor Yellow
-        return
+    } else {
+        $xpi = Obter-Arquivo $WebSignerXpi.Arquivo $WebSignerXpi.Sha256
+        if ($xpi) {
+            Copy-Item $xpi "$PastaTI\websigner.xpi" -Force
+            [void](Gravar-PoliticaFirefox $true $null)
+            Write-Host "Firefox: extensao forcada."
+        }
     }
-    $xpi = Obter-Arquivo $WebSignerXpi.Arquivo $WebSignerXpi.Sha256
-    if (-not $xpi) { return }
-    Copy-Item $xpi "$PastaTI\websigner.xpi" -Force
-    [void](Gravar-PoliticaFirefox $true $null)
-    Write-Host "Firefox: extensao forcada."
+    Configurar-TogglesWebSigner
 }
 
 # Escreve o policies.json do Firefox com as duas partes do kit:
@@ -935,6 +984,8 @@ function Verificar-WebSigner {
     if ($faltaPolitica -and (Perguntar-SN "Aplicar a extensao Web Signer de novo?")) {
         Aplicar-ExtensaoWebSigner
         Write-Host "  Feche e abra os navegadores." -ForegroundColor Cyan
+    } else {
+        Configurar-TogglesWebSigner
     }
 }
 
