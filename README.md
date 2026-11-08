@@ -62,14 +62,15 @@ Remove só os **programas do kit**: PJeOffice, SafeNet, SafeSign e Web Signer. O
 | Programa | Origem |
 |---|---|
 | WinRAR, Chrome, Firefox | winget (versão mais nova) |
-| SafeNet, SafeSign, Web Signer | winget, com **versão fixa** no `instalar.ps1` |
+| SafeSign, Web Signer | winget, com **versão fixa** no `instalar.ps1` |
 | PJeOffice Pro | Release `instaladores` do GitHub (não está no winget) |
+| SafeNet 10.7 | Release `instaladores` do GitHub. No winget ele vem num pacote de 142 MB e demora muito; o nosso `safenet.msi` tem 15 MB |
 
 O winget é o catálogo de programas da Microsoft: baixa do site do fabricante e confere a impressão digital. Precisa de internet.
 
-**No Release `instaladores`** ficam só o `pjeoffice.exe`, o `websigner.xpi` e os arquivos de Mac (`mac-...`).
+**No Release `instaladores`** ficam o `pjeoffice.exe`, o `safenet.msi`, o `websigner.xpi` e os arquivos de Mac (`mac-...`).
 
-**Na pasta `instaladores/` do pendrive** ficam todos, incluindo `safenet.msi`, `safesign.exe` e `websigner.msi`. São o plano B sem internet: só são usados quando o kit roda do pendrive e o winget não consegue instalar.
+**Na pasta `instaladores/` do pendrive** ficam todos, incluindo `safesign.exe` e `websigner.msi`. Esses dois são o plano B sem internet: só são usados quando o kit roda do pendrive e o winget não consegue instalar.
 
 Os arquivos de Mac começam com `mac-`. No Mac, o script escolhe sozinho a versão certa de cada programa para a versão do macOS e o processador (Intel ou M1/M2/M3), e instala o Rosetta quando precisa.
 
@@ -89,9 +90,9 @@ No Firefox, o kit também liga o uso dos certificados do Windows e carrega o mó
 
 ## Como atualizar um programa
 
-**SafeNet, SafeSign e Web Signer (winget):** veja as versões disponíveis com `winget show --id Thales.SafeNetAuthenticationClient --versions` (os IDs estão no `instalar.ps1`). Troque o `Versao` do programa em `$ProgramasWinget` e envie o script. Não precisa subir arquivo nenhum. Driver de token novo: teste numa máquina antes. Se quiser manter o plano B do pendrive atualizado, troque também o arquivo e o `Sha256` em `Pendrive`.
+**SafeSign e Web Signer (winget):** veja as versões disponíveis com `winget show --id AETEurope.SafeSignICStandard --versions` (os IDs estão no `instalar.ps1`). Troque o `Versao` do programa em `$ProgramasWinget` e envie o script. Não precisa subir arquivo nenhum. Driver de token novo: teste numa máquina antes. Se quiser manter o plano B do pendrive atualizado, troque também o arquivo e o `Sha256` em `Pendrive`.
 
-**PJeOffice e os programas de Mac (Release):**
+**PJeOffice, SafeNet e os programas de Mac (Release):**
 
 1. Troque o arquivo em `instaladores/`. Sem espaços no nome: o GitHub troca espaços por pontos.
 2. Gere a impressão digital. No Windows: `Get-FileHash .\instaladores\safenet.msi -Algorithm SHA256`. No Mac: `shasum -a 256 instaladores/arquivo`.

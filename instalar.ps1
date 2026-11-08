@@ -33,15 +33,15 @@ $ProgramasWinget = @(
     @{ Nome = "WinRAR";          Id = "RARLab.WinRAR";   Busca = "WinRAR" },
     @{ Nome = "Google Chrome";   Id = "Google.Chrome";   Busca = "Google Chrome" },
     @{ Nome = "Mozilla Firefox"; Id = "Mozilla.Firefox"; Busca = "Mozilla Firefox" },
-    @{ Nome = "SafeNet (token)"; Id = "Thales.SafeNetAuthenticationClient"; Versao = "10.9.4482.0"; Busca = "SafeNet Authentication Client"
-       Pendrive = @{ Arquivo = "safenet.msi"; Argumentos = "/qn /norestart"; Sha256 = "a998da33cab2d70675d5de9a8a114f870f643dba1f676f9586b263030c395e12" } },
     @{ Nome = "Driver do token GD"; Id = "AETEurope.SafeSignICStandard"; Versao = "3.5.3.0"; Busca = "SafeSign"
        Pendrive = @{ Arquivo = "safesign.exe"; Argumentos = '/s /v"/qn /norestart"'; Sha256 = "0dad976c832526f494f665661fb8b47a93c5f9b969bc9b7d5496d6dd87ae6dfe" } },
     @{ Nome = "Web Signer"; Id = "SoftplanSistemas.WebSigner"; Versao = "2.15.0.0"; Busca = "Web Signer"
        Pendrive = @{ Arquivo = "websigner.msi"; Argumentos = "/qn /norestart"; Sha256 = "e66d0df97ff28272d4535b19f1ac3c67b13bc7ab3fb695e27ba72e5a1f4be0a3" } }
 )
 
-# Instaladores que NAO estao no winget (ficam no Release do GitHub, ou na pasta "instaladores" do pendrive)
+# Instaladores baixados do Release do GitHub (ou da pasta "instaladores" do pendrive).
+# Aqui ficam os que nao estao no winget e os que no winget sao lentos demais: o SafeNet
+# do winget vem num pacote de 142 MB da DigiCert; o nosso safenet.msi tem 15 MB.
 #   Arquivo    = nome exato do arquivo no Release (sem espacos)
 #   Sha256     = impressao digital do arquivo. Se o arquivo baixado nao bater, NAO instala.
 #                Para gerar: Get-FileHash .\arquivo.exe -Algorithm SHA256
@@ -51,7 +51,9 @@ $ProgramasWinget = @(
 # e troque Versao e Sha256 aqui.
 $InstaladoresKit = @(
     @{ Nome = "PJeOffice Pro";      Versao = "2.5.16u"; Arquivo = "pjeoffice.exe"; Argumentos = "/S";
-       Busca = "PJeOffice"; Sha256 = "8237999eff5313607daf53558b4a0b8f3aba4da670c6438ee34eb25120b45bc4" }
+       Busca = "PJeOffice"; Sha256 = "8237999eff5313607daf53558b4a0b8f3aba4da670c6438ee34eb25120b45bc4" },
+    @{ Nome = "SafeNet (token)";    Versao = "10.7";    Arquivo = "safenet.msi";   Argumentos = "/qn /norestart";
+       Busca = "SafeNet Authentication Client"; Sha256 = "a998da33cab2d70675d5de9a8a114f870f643dba1f676f9586b263030c395e12" }
 )
 
 # Tipos de token reconhecidos no cabecalho, pelo nome que o aparelho USB informa.
