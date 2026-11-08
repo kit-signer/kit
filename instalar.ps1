@@ -101,6 +101,32 @@ $ModulosToken = [ordered]@{
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# Apaga do historico do PowerShell as linhas do kit, para ninguem repetir o comando
+# com a seta para cima. Roda ao abrir o kit e ao sair.
+function Limpar-Historico {
+    $arquivos = @("$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt")
+    try { $arquivos += (Get-PSReadLineOption -ErrorAction Stop).HistorySavePath } catch { }
+    try {
+        # usuario da tela, se o kit estiver rodando com outra conta de administrador
+        $u = (Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).UserName
+        if ($u) {
+            $sid = (New-Object Security.Principal.NTAccount($u)).Translate([Security.Principal.SecurityIdentifier]).Value
+            $perfil = (Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sid }).LocalPath
+            if ($perfil) { $arquivos += "$perfil\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt" }
+        }
+    } catch { }
+    foreach ($a in ($arquivos | Where-Object { $_ } | Select-Object -Unique)) {
+        if (-not (Test-Path $a)) { continue }
+        $linhas = @(Get-Content $a -ErrorAction SilentlyContinue)
+        $ficam = @($linhas | Where-Object { $_ -notmatch 'kit-signer|kit-ti\.ps1' })
+        if ($ficam.Count -ne $linhas.Count) { Set-Content -Path $a -Value $ficam -Encoding UTF8 -ErrorAction SilentlyContinue }
+    }
+    # memoria da janela (seta para cima): o PowerShell nao deixa tirar uma linha so, entao limpa a lista da janela
+    try { [Microsoft.PowerShell.PSConsoleReadLine]::ClearHistory() } catch { }
+    Clear-History -ErrorAction SilentlyContinue
+}
+Limpar-Historico
+
 # Rodando de um arquivo (pendrive) ou pela internet (irm | iex)?
 $ArquivoDoScript = $PSCommandPath
 $PastaLocal = $null
@@ -134,6 +160,11 @@ if (-not $ehAdmin) {
 }
 
 New-Item -ItemType Directory -Path "$PastaTI\logs", "$PastaTI\instaladores" -Force | Out-Null
+
+# A copia em %TEMP% (usada so para pedir administrador) ja foi lida inteira: pode apagar
+if ($ArquivoDoScript -and (Split-Path $ArquivoDoScript -Leaf) -eq "kit-ti.ps1") {
+    Remove-Item $ArquivoDoScript -Force -ErrorAction SilentlyContinue
+}
 
 
 # ============================ TELA ===================================
@@ -862,12 +893,11 @@ function Verificar-Tribunais {
     return $todos
 }
 
-function Verificar-WebSigner {
+# Estado da extensao Web Signer em cada navegador instalado:
+#   OK = configurada e ja baixada | PENDENTE = configurada, falta abrir o navegador | FALTA = nao configurada
+function Status-ExtensaoWebSigner {
     $perfil = Perfil-UsuarioTela
-    $faltaPolitica = $false
-    if (Test-Instalado "Web Signer") { Write-Host "  [OK]     Programa Web Signer instalado" -ForegroundColor Green }
-    else { Write-Host "  [FALTA]  Programa Web Signer nao instalado. Use 'Instalar programas'." -ForegroundColor Red }
-
+    $lista = @()
     $navegadores = @(
         @{ Nome = "Chrome"; Base = "$perfil\AppData\Local\Google\Chrome\User Data"; Chave = "HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist" },
         @{ Nome = "Edge";   Base = "$perfil\AppData\Local\Microsoft\Edge\User Data"; Chave = "HKLM:\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist" }
@@ -879,23 +909,70 @@ function Verificar-WebSigner {
             $politica = [bool]((Get-ItemProperty $n.Chave).PSObject.Properties | Where-Object { $_.Value -like "$WebSignerChromeId*" })
         }
         $baixada = [bool](Get-ChildItem "$($n.Base)\*\Extensions\$WebSignerChromeId" -Directory -ErrorAction SilentlyContinue)
-        if ($politica -and $baixada) { Write-Host "  [OK]     Extensao no $($n.Nome)" -ForegroundColor Green }
-        elseif ($politica) { Write-Host "  [AVISO]  $($n.Nome): extensao configurada, mas ainda nao baixada. Abra o $($n.Nome) e espere 1 minuto." -ForegroundColor Yellow }
-        else { Write-Host "  [FALTA]  Extensao no $($n.Nome)" -ForegroundColor Red; $faltaPolitica = $true }
+        $lista += [pscustomobject]@{ Nome = $n.Nome; Estado = $(if ($politica -and $baixada) { "OK" } elseif ($politica) { "PENDENTE" } else { "FALTA" }) }
     }
     $pastaFirefox = Pasta-Firefox
     if ($pastaFirefox) {
         $pol = "$pastaFirefox\distribution\policies.json"
         $politica = (Test-Path $pol) -and ((Get-Content $pol -Raw) -like "*$WebSignerFirefoxId*")
         $baixada = [bool](Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles\*\extensions\$WebSignerFirefoxId.xpi" -ErrorAction SilentlyContinue)
-        if ($politica -and $baixada) { Write-Host "  [OK]     Extensao no Firefox" -ForegroundColor Green }
-        elseif ($politica) { Write-Host "  [AVISO]  Firefox: extensao configurada, mas ainda nao baixada. Abra o Firefox." -ForegroundColor Yellow }
-        else { Write-Host "  [FALTA]  Extensao no Firefox" -ForegroundColor Red; $faltaPolitica = $true }
+        $lista += [pscustomobject]@{ Nome = "Firefox"; Estado = $(if ($politica -and $baixada) { "OK" } elseif ($politica) { "PENDENTE" } else { "FALTA" }) }
+    }
+    return $lista
+}
+
+function Verificar-WebSigner {
+    if (Test-Instalado "Web Signer") { Write-Host "  [OK]     Programa Web Signer instalado" -ForegroundColor Green }
+    else { Write-Host "  [FALTA]  Programa Web Signer nao instalado. Use 'Instalar programas'." -ForegroundColor Red }
+    $faltaPolitica = $false
+    foreach ($n in Status-ExtensaoWebSigner) {
+        switch ($n.Estado) {
+            "OK"       { Write-Host "  [OK]     Extensao no $($n.Nome)" -ForegroundColor Green }
+            "PENDENTE" { Write-Host "  [AVISO]  $($n.Nome): extensao configurada, mas ainda nao baixada. Abra o $($n.Nome) e espere 1 minuto." -ForegroundColor Yellow }
+            "FALTA"    { Write-Host "  [FALTA]  Extensao no $($n.Nome)" -ForegroundColor Red; $faltaPolitica = $true }
+        }
     }
     if ($faltaPolitica -and (Perguntar-SN "Aplicar a extensao Web Signer de novo?")) {
         Aplicar-ExtensaoWebSigner
         Write-Host "  Feche e abra os navegadores." -ForegroundColor Cyan
     }
+}
+
+function Versao-Instalada($busca) {
+    $e = Get-ItemProperty $ChavesDesinstalacao -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -like "*$busca*" } | Select-Object -First 1
+    if ($e) { return $e.DisplayVersion }
+    return $null
+}
+
+# Quadro mostrado ao abrir "Correcao de erros": o que esta instalado e configurado nesta maquina
+function Mostrar-SituacaoMaquina {
+    Write-Host "   SITUACAO DESTA MAQUINA" -ForegroundColor Cyan
+    $falta = $false
+    foreach ($p in (Programas-Desinstalaveis)) {
+        if (Test-Instalado $p.Busca) {
+            $v = Versao-Instalada $p.Busca
+            Write-Host ("   [OK]    {0,-22} {1}" -f $p.Nome, $v) -ForegroundColor Green
+        } else {
+            Write-Host ("   [FALTA] {0,-22} nao instalado" -f $p.Nome) -ForegroundColor Red
+            $falta = $true
+        }
+    }
+    $ext = @(Status-ExtensaoWebSigner)
+    if ($ext.Count) {
+        Write-Host "   Extensao Web Signer: " -NoNewline
+        foreach ($n in $ext) {
+            $cor = $(switch ($n.Estado) { "OK" { "Green" } "PENDENTE" { "Yellow" } default { "Red" } })
+            $txt = $(switch ($n.Estado) { "OK" { "ok" } "PENDENTE" { "abrir o navegador" } default { "falta" } })
+            Write-Host "$($n.Nome) ($txt)  " -ForegroundColor $cor -NoNewline
+            if ($n.Estado -eq "FALTA") { $falta = $true }
+        }
+        Write-Host ""
+    }
+    if (Cadeia-IcpInstalada) { Write-Host "   Cadeia ICP-Brasil:   instalada" -ForegroundColor Green }
+    else { Write-Host "   Cadeia ICP-Brasil:   falta (use 'Erro de conexao com certificado digital')" -ForegroundColor Red }
+    if ($falta) { Write-Host "   Para instalar o que falta: Voltar > Instalar programas." -ForegroundColor Yellow }
+    Write-Host ""
 }
 
 function Abrir-EmOutroNavegador {
@@ -927,7 +1004,7 @@ function Abrir-EmOutroNavegador {
         Start-Process $n.Exe -ArgumentList $site.Url
     }
     Write-Host "  Abrindo $($site.Nome) no $($n.Nome). Se funcionar aqui, o problema e o outro navegador:" -ForegroundColor Green
-    Write-Host "  use 'Limpar cache e cookies' e 'Verificar extensao Web Signer'." -ForegroundColor Green
+    Write-Host "  use 'Limpar cache e cookies' e confira a extensao no quadro do menu." -ForegroundColor Green
 }
 
 function Acertar-Relogio {
@@ -974,11 +1051,6 @@ $Correcoes = @(
         Acao = { Corrigir-CertificadoDigital }
     },
     @{
-        Nome = "O tribunal esta fora do ar?"
-        Descricao = "Testa a internet e os sites dos tribunais, para saber se o problema e daqui ou de la."
-        Acao = { [void](Verificar-Tribunais) }
-    },
-    @{
         Nome = "Limpar cache dos navegadores"
         Descricao = "Fecha Chrome, Edge e Firefox e apaga o cache. Nao desloga de nenhum site."
         Acao = { Limpar-Navegadores $false }
@@ -992,11 +1064,6 @@ $Correcoes = @(
         Nome = "Limpar DNS e renovar IP"
         Descricao = "Limpa falhas de DNS (ipconfig /flushdns) e, se quiser, renova o IP."
         Acao = { Limpar-Dns (Perguntar-RenovarIp) }
-    },
-    @{
-        Nome = "Verificar extensao Web Signer"
-        Descricao = "Confere o programa e a extensao em cada navegador, e aplica de novo se faltar."
-        Acao = { Verificar-WebSigner }
     },
     @{
         Nome = "Abrir o tribunal em outro navegador"
@@ -1023,15 +1090,6 @@ $Correcoes = @(
         }
     },
     @{
-        Nome = "Navegador ou PJeOffice travado"
-        Descricao = "Fecha Chrome, Edge, Firefox e PJeOffice (salve o que estiver aberto antes)."
-        Acao = {
-            Fechar-Navegadores
-            Get-Process | Where-Object { $_.Name -like "pjeoffice*" -or $_.Path -like "*\PJeOffice*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-            Write-Host "  Programas fechados. Pode abrir de novo." -ForegroundColor Green
-        }
-    },
-    @{
         Nome = "Remover extensoes forcadas"
         Descricao = "Tira as politicas de extensao do Chrome, Edge e Firefox (a extensao volta a poder ser removida)."
         Acao = {
@@ -1046,6 +1104,7 @@ $Correcoes = @(
 function Menu-Correcoes {
     while ($true) {
         Mostrar-Cabecalho
+        Mostrar-SituacaoMaquina
         Write-Host "   CORRECAO DE ERROS" -ForegroundColor Cyan
         Write-Host ""
         for ($i = 0; $i -lt $Correcoes.Count; $i++) {
@@ -1079,6 +1138,6 @@ while ($true) {
     switch (Ler-Opcao @("1", "2", "0")) {
         "1" { Menu-Windows }
         "2" { Mostrar-ComandoMac; Pausar }
-        "0" { Write-Host ""; Write-Host "   Ate logo!" -ForegroundColor DarkYellow; return }
+        "0" { Limpar-Historico; Write-Host ""; Write-Host "   Ate logo!" -ForegroundColor DarkYellow; return }
     }
 }
