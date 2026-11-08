@@ -365,8 +365,8 @@ menu_instalacao() {
     echo "   [2] Mac (este computador)"
     echo "   [0] Voltar"; echo
     case "$(ler_opcao 1 2 0)" in
-      1) echo; echo "${CIANO}   No Windows, abra o CMD ou o PowerShell como administrador e cole:${FIM}"; echo
-         echo "   powershell -c \"irm $URL_SCRIPT_WIN | Out-String | iex\""; pausar ;;
+      1) echo; echo "${CIANO}   No Windows, abra o PowerShell (nao o CMD) como administrador e cole:${FIM}"; echo
+         echo "   irm $URL_SCRIPT_WIN | Out-String | iex"; pausar ;;
       2) instalar_com_log; pausar ;;
       0) return ;;
     esac

@@ -4,11 +4,13 @@ Instala e configura as máquinas da equipe com um comando só, e tem um menu de 
 
 ## Como usar
 
-**Windows** (CMD ou PowerShell, como administrador):
+**Windows**: abra o **PowerShell** (botão direito no Iniciar › Terminal (Admin) ou Windows PowerShell (Admin)) e cole:
 
 ```
-powershell -c "irm https://raw.githubusercontent.com/kit-signer/kit/main/instalar.ps1 | Out-String | iex"
+irm https://raw.githubusercontent.com/kit-signer/kit/main/instalar.ps1 | Out-String | iex
 ```
+
+Use o PowerShell, não o CMD. Rodar pelo CMD exige `powershell -c "..."`, e o Microsoft Defender bloqueia esse formato como trojan (`Trojan:Win32/Commando`), mesmo o script sendo inofensivo. Se abrir sem ser administrador, o kit pede a permissão sozinho.
 
 **Mac** (Terminal: Cmd+Espaço, digite "Terminal", Enter):
 

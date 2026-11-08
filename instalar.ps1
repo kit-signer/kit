@@ -1,8 +1,9 @@
 # =====================================================================
 #  instalar.ps1 - Kit de TI da CAAAL
 #
-#  Uso pela internet (CMD ou PowerShell):
-#    powershell -c "irm https://raw.githubusercontent.com/kit-signer/kit/main/instalar.ps1 | Out-String | iex"
+#  Uso pela internet (no PowerShell, de preferencia como administrador):
+#    irm https://raw.githubusercontent.com/kit-signer/kit/main/instalar.ps1 | Out-String | iex
+#  Use o PowerShell, nao o CMD: pelo CMD o Defender bloqueia o comando como trojan.
 #  Uso pelo pendrive:
 #    dois cliques no INSTALAR.bat (usa a pasta "instaladores" ao lado, sem baixar nada)
 #
@@ -72,10 +73,21 @@ $ehAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $ehAdmin) {
     Write-Host "Pedindo permissao de administrador..." -ForegroundColor Yellow
-    if ($ArquivoDoScript) {
-        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ArquivoDoScript`""
-    } else {
-        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm $UrlScript | Out-String | iex`""
+    if (-not $ArquivoDoScript) {
+        # Veio pelo "irm | iex": salva uma copia do script e reabre ela como administrador.
+        # Reabrir com -File (e nao passando o download como -Command): o Defender bloqueia o outro jeito.
+        $ArquivoDoScript = Join-Path $env:TEMP "kit-ti.ps1"
+        try {
+            Invoke-WebRequest -Uri $UrlScript -OutFile $ArquivoDoScript -UseBasicParsing -ErrorAction Stop
+        } catch {
+            Write-Host "Nao consegui baixar o kit: $($_.Exception.Message)" -ForegroundColor Red
+            return
+        }
+    }
+    try {
+        Start-Process powershell.exe -Verb RunAs -ErrorAction Stop -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ArquivoDoScript`""
+    } catch {
+        Write-Host "Permissao de administrador negada. Abra o PowerShell como administrador e rode de novo." -ForegroundColor Red
     }
     return
 }
