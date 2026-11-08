@@ -1,0 +1,3 @@
+# Scripts do Mac precisam de quebra de linha LF, senao o bash quebra
+*.sh      text eol=lf
+*.command text eol=lf
