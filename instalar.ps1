@@ -176,6 +176,25 @@ function Obter-Arquivo($arquivo, $sha256) {
     return $null
 }
 
+# Roda um instalador e espera SO ele terminar.
+# Nao usar "Start-Process -Wait": no PowerShell 5.1 ele espera tambem tudo que o
+# instalador abrir. O PJeOffice abre sozinho no fim da instalacao e fica em segundo
+# plano, e o -Wait travava a instalacao ate alguem fechar o PJeOffice.
+# Devolve o codigo de saida, ou $null se passar do tempo limite.
+$MinutosLimite = 20
+function Executar-Instalador($arquivo, $argumentos) {
+    if ($arquivo -like "*.msi") {
+        $proc = Start-Process msiexec.exe -ArgumentList "/i `"$arquivo`" $argumentos" -PassThru
+    } elseif ($argumentos) {
+        $proc = Start-Process $arquivo -ArgumentList $argumentos -PassThru
+    } else {
+        $proc = Start-Process $arquivo -PassThru
+    }
+    $null = $proc.Handle   # sem isso o PowerShell 5.1 as vezes perde o codigo de saida
+    if (-not $proc.WaitForExit($MinutosLimite * 60 * 1000)) { return $null }
+    return $proc.ExitCode
+}
+
 function Add-ListaForcada($chave, $valor) {
     if (-not (Test-Path $chave)) { New-Item -Path $chave -Force | Out-Null }
     $props = (Get-ItemProperty -Path $chave).PSObject.Properties | Where-Object { $_.Name -match '^\d+$' }
@@ -243,13 +262,11 @@ function Instalar-Windows {
         $arquivo = Obter-Arquivo $p.Arquivo $p.Sha256
         if (-not $arquivo) { continue }
         Write-Host "Instalando $($p.Nome) $($p.Versao)..."
-        if ($arquivo -like "*.msi") {
-            $proc = Start-Process msiexec.exe -ArgumentList "/i `"$arquivo`" $($p.Argumentos)" -Wait -PassThru
-        } else {
-            $proc = Start-Process $arquivo -ArgumentList $p.Argumentos -Wait -PassThru
-        }
-        if ($proc.ExitCode -notin 0, 3010) {
-            Write-Host "  Codigo de saida $($proc.ExitCode) - confira os parametros silenciosos." -ForegroundColor Yellow
+        $codigo = Executar-Instalador $arquivo $p.Argumentos
+        if ($null -eq $codigo) {
+            Write-Host "  O instalador passou de $MinutosLimite minutos sem terminar. Seguindo para o proximo." -ForegroundColor Yellow
+        } elseif ($codigo -notin 0, 3010) {
+            Write-Host "  Codigo de saida $codigo - confira os parametros silenciosos." -ForegroundColor Yellow
         }
     }
 
