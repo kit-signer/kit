@@ -54,6 +54,17 @@ $InstaladoresKit = @(
        Busca = "PJeOffice"; Sha256 = "8237999eff5313607daf53558b4a0b8f3aba4da670c6438ee34eb25120b45bc4" }
 )
 
+# Tipos de token reconhecidos no cabecalho, pelo nome que o aparelho USB informa.
+#   Padrao = trecho do nome (expressao regular, sem diferenciar maiusculas)
+#   Driver = como o driver aparece em "Aplicativos instalados" ($null = nao vem no kit)
+$TiposToken = @(
+    @{ Padrao = 'etoken|token jc|safenet|aladdin';                Tipo = "SafeNet eToken";         Driver = "SafeNet Authentication Client"; DriverNome = "SafeNet" },
+    @{ Padrao = 'idprime|gemalto';                                Tipo = "Thales/Gemalto IDPrime"; Driver = "SafeNet Authentication Client"; DriverNome = "SafeNet" },
+    @{ Padrao = 'starsign|giesecke|g&d|g\+d|smart ?cafe|sm@rtcafe'; Tipo = "G+D StarSign";         Driver = "SafeSign";                      DriverNome = "SafeSign" },
+    @{ Padrao = 'watchdata|proxkey';                              Tipo = "Watchdata";              Driver = $null;                           DriverNome = $null },
+    @{ Padrao = 'epass|feitian';                                  Tipo = "Feitian ePass";          Driver = $null;                           DriverNome = $null }
+)
+
 # Programas de uso pessoal que o kit instala mas NUNCA desinstala
 # (nem aparecem na opcao "Desinstalar programas"). Use o Nome exatamente como acima.
 $NaoDesinstalar = @("WinRAR", "Google Chrome", "Mozilla Firefox")
@@ -137,8 +148,58 @@ function Mostrar-Cabecalho {
     Write-Host ""
     Write-Host "   Kit de TI  |  Configuracao de maquina" -ForegroundColor Gray
     Write-Host "   Computador: $env:COMPUTERNAME   Usuario: $env:USERNAME" -ForegroundColor DarkGray
+    Mostrar-StatusToken
     Write-Host "   -------------------------------------------" -ForegroundColor DarkGray
     Write-Host ""
+}
+
+# Leitores de cartao / tokens conectados agora. O tipo vem do nome que o USB informa
+# (o Windows costuma chamar todos de "Usbccid Smartcard Reader").
+function Ler-Tokens {
+    $itens = @()
+    foreach ($d in @(Get-PnpDevice -PresentOnly -Class SmartCardReader -ErrorAction SilentlyContinue)) {
+        $usb = (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_BusReportedDeviceDesc' -ErrorAction SilentlyContinue).Data
+        $itens += Classificar-Token $usb $d.FriendlyName $d.Manufacturer
+    }
+    return $itens
+}
+
+function Classificar-Token($usb, $nomeWindows, $fabricante) {
+    $texto = "$usb $nomeWindows $fabricante"
+    $tipo = $TiposToken | Where-Object { $texto -match $_.Padrao } | Select-Object -First 1
+    return [pscustomobject]@{
+        Nome       = (@($usb, $nomeWindows) | Where-Object { $_ } | Select-Object -First 1)
+        Tipo       = $(if ($tipo) { $tipo.Tipo } else { $null })
+        Driver     = $(if ($tipo) { $tipo.Driver } else { $null })
+        DriverNome = $(if ($tipo) { $tipo.DriverNome } else { $null })
+    }
+}
+
+# Linha do token no cabecalho. Guarda a leitura por 10 s para as telas nao ficarem lentas.
+function Mostrar-StatusToken {
+    if (-not $script:CacheToken -or ((Get-Date) - $script:CacheToken.Hora).TotalSeconds -gt 10) {
+        $script:CacheToken = @{ Hora = Get-Date; Tokens = @(Ler-Tokens) }
+    }
+    $tokens = $script:CacheToken.Tokens
+    if ($tokens.Count -eq 0) {
+        Write-Host "   Token: nenhum conectado" -ForegroundColor DarkGray
+        return
+    }
+    foreach ($t in $tokens) {
+        if (-not $t.Tipo) { Write-Host "   Leitor/token conectado: $($t.Nome)" -ForegroundColor Gray; continue }
+        Write-Host "   Token: $($t.Tipo) conectado " -ForegroundColor Gray -NoNewline
+        if (-not $t.Driver) { Write-Host "(driver nao vem no kit)" -ForegroundColor Yellow }
+        elseif (Test-Instalado $t.Driver) { Write-Host "(driver $($t.DriverNome) instalado)" -ForegroundColor Green }
+        else { Write-Host "(FALTA o driver $($t.DriverNome): use Instalar programas)" -ForegroundColor Red }
+    }
+    $cert = @(Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue |
+        Where-Object { $_.Issuer -match "ICP-Brasil" -and $_.HasPrivateKey } | Sort-Object NotAfter -Descending) | Select-Object -First 1
+    if ($cert) {
+        $nome = ($cert.GetNameInfo("SimpleName", $false) -split ':')[0]
+        $vence = $cert.NotAfter.ToString('dd/MM/yyyy')
+        if ($cert.NotAfter -lt (Get-Date)) { Write-Host "   Certificado: $nome - VENCIDO em $vence" -ForegroundColor Red }
+        else { Write-Host "   Certificado: $nome - vale ate $vence" -ForegroundColor Gray }
+    }
 }
 
 function Ler-Opcao($validas) {
@@ -631,24 +692,28 @@ function Instalar-Windows {
 
 function Mostrar-ComandoMac {
     Write-Host ""
-    Write-Host "   No Mac, abra o Terminal e cole:" -ForegroundColor Cyan
+    Write-Host "   Este kit esta aberto num Windows. Para configurar um Mac," -ForegroundColor Cyan
+    Write-Host "   abra o Terminal no Mac (Cmd+Espaco, digite Terminal) e cole:" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "   curl -fsSL $UrlScriptMac | bash" -ForegroundColor White
     Write-Host ""
 }
 
-function Menu-Instalacao {
+# Opcoes do Windows (so aparecem depois de escolher Windows na primeira tela)
+function Menu-Windows {
     while ($true) {
         Mostrar-Cabecalho
-        Write-Host "   INSTALACAO DE PROGRAMAS" -ForegroundColor Cyan
+        Write-Host "   WINDOWS" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "   [1] Windows (este computador)"
-        Write-Host "   [2] Mac (mostra o comando para o Terminal)"
+        Write-Host "   [1] Instalar programas"
+        Write-Host "   [2] Correcao de erros"
+        Write-Host "   [3] Desinstalar programas"
         Write-Host "   [0] Voltar"
         Write-Host ""
-        switch (Ler-Opcao @("1", "2", "0")) {
-            "1" { Instalar-Windows; Pausar }
-            "2" { Mostrar-ComandoMac; Pausar }
+        switch (Ler-Opcao @("1", "2", "3", "0")) {
+            "1" { Instalar-Windows; $script:CacheToken = $null; Pausar }
+            "2" { Menu-Correcoes }
+            "3" { Menu-Desinstalar; $script:CacheToken = $null }
             "0" { return }
         }
     }
@@ -799,7 +864,7 @@ function Verificar-WebSigner {
     $perfil = Perfil-UsuarioTela
     $faltaPolitica = $false
     if (Test-Instalado "Web Signer") { Write-Host "  [OK]     Programa Web Signer instalado" -ForegroundColor Green }
-    else { Write-Host "  [FALTA]  Programa Web Signer nao instalado. Use 'Instalacao de programas'." -ForegroundColor Red }
+    else { Write-Host "  [FALTA]  Programa Web Signer nao instalado. Use 'Instalar programas'." -ForegroundColor Red }
 
     $navegadores = @(
         @{ Nome = "Chrome"; Base = "$perfil\AppData\Local\Google\Chrome\User Data"; Chave = "HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist" },
@@ -1003,15 +1068,15 @@ function Menu-Correcoes {
 
 while ($true) {
     Mostrar-Cabecalho
-    Write-Host "   [1] Instalacao de programas"
-    Write-Host "   [2] Correcao de erros"
-    Write-Host "   [3] Desinstalar programas"
-    Write-Host "   [4] Sair"
+    Write-Host "   Qual computador voce vai configurar?" -ForegroundColor Cyan
     Write-Host ""
-    switch (Ler-Opcao @("1", "2", "3", "4")) {
-        "1" { Menu-Instalacao }
-        "2" { Menu-Correcoes }
-        "3" { Menu-Desinstalar }
-        "4" { Write-Host ""; Write-Host "   Ate logo!" -ForegroundColor DarkYellow; return }
+    Write-Host "   [1] Windows   (este computador)"
+    Write-Host "   [2] Mac"
+    Write-Host "   [0] Sair"
+    Write-Host ""
+    switch (Ler-Opcao @("1", "2", "0")) {
+        "1" { Menu-Windows }
+        "2" { Mostrar-ComandoMac; Pausar }
+        "0" { Write-Host ""; Write-Host "   Ate logo!" -ForegroundColor DarkYellow; return }
     }
 }

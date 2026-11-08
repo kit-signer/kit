@@ -24,7 +24,19 @@ Vai pedir a senha do Mac. Não aparece nada enquanto digita, e isso é normal.
 - Windows: dois cliques em `INSTALAR.bat`.
 - Mac: dois cliques em `INSTALAR.command`. Se o macOS bloquear: botão direito › Abrir › Abrir. Se o arquivo perdeu a permissão (acontece ao copiar pelo Windows), use no Terminal: `sudo bash /Volumes/NOME_DO_PENDRIVE/caaal-kit/instalar.sh`
 
-O menu tem: instalação de programas (Windows ou Mac), correção de erros, desinstalar programas (por enquanto só no Windows) e sair.
+### O menu
+
+A primeira tela pergunta **qual computador você vai configurar** (Windows ou Mac) e depois mostra só as opções daquele sistema:
+
+| Windows | Mac |
+|---|---|
+| Instalar programas | Instalar programas |
+| Correção de erros | Correção de erros |
+| Desinstalar programas | (ainda não tem) |
+
+Se você escolher o outro sistema (Mac num Windows, ou Windows num Mac), o kit mostra o comando para colar no outro computador.
+
+**Token no cabeçalho:** o topo da tela mostra se tem um token conectado, de que tipo (SafeNet eToken, Thales/Gemalto IDPrime, G+D StarSign, Watchdata, Feitian ePass) e se o driver dele está instalado. No Windows, mostra também o certificado e até quando ele vale. O tipo é reconhecido pelo nome que o aparelho USB informa. Para reconhecer outro modelo, acrescente uma linha em `$TiposToken` (Windows) ou `TIPOS_TOKEN` (Mac).
 
 ### Desinstalar programas
 

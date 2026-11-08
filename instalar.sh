@@ -68,6 +68,18 @@ CHROME_STORE_UPDATE="https://clients2.google.com/service/update2/crx"
 WEBSIGNER_FIREFOX_ID="websigner@softplan_com_br"
 WEBSIGNER_XPI="websigner.xpi|2c16afbfb80dff721e2796ffae262093a8558d68ac15b77af5f8169085ea5c6a"
 
+# Tipos de token reconhecidos no cabecalho, pelo nome que o aparelho USB informa.
+# Formato:  padrao;Tipo;busca do driver;nome do driver   (separado por ponto e virgula)
+#   padrao = trecho do nome (expressao regular, sem diferenciar maiusculas)
+#   busca do driver = como a funcao "instalado" acha o driver (vazio = nao vem no kit)
+TIPOS_TOKEN=(
+  "etoken|token jc|safenet|aladdin;SafeNet eToken;safenet;SafeNet"
+  "idprime|gemalto;Thales/Gemalto IDPrime;safenet;SafeNet"
+  "starsign|giesecke|g&d|g\+d|smart ?cafe|sm@rtcafe;G+D StarSign;safesign;SafeSign"
+  "watchdata|proxkey;Watchdata;;"
+  "epass|feitian;Feitian ePass;;"
+)
+
 # ====================== FIM DA CONFIGURACAO ==========================
 
 
@@ -116,9 +128,33 @@ cabecalho() {
   echo "    \\____/_/   \\_\\/_/   \\_\\/_/   \\_\\ |_____|${FIM}"
   echo
   echo "   Kit de TI  |  Configuracao de maquina"
-  echo "${CINZA}   Computador: $(scutil --get ComputerName 2>/dev/null || hostname)   Usuario: $(stat -f%Su /dev/console)"
-  echo "   -------------------------------------------${FIM}"
+  echo "${CINZA}   Computador: $(scutil --get ComputerName 2>/dev/null || hostname)   Usuario: $(stat -f%Su /dev/console)${FIM}"
+  status_token
+  echo "${CINZA}   -------------------------------------------${FIM}"
   echo
+}
+
+# Nomes dos aparelhos USB conectados (o token informa o proprio nome, ex.: "StarSign CUT S")
+nomes_usb() {
+  ioreg -p IOUSB -l -w0 2>/dev/null | sed -n 's/.*"USB Product Name" = "\(.*\)"/\1/p'
+}
+
+# Linha do token no cabecalho
+status_token() {
+  local nome linha padrao tipo busca driver achou=0
+  while IFS= read -r nome; do
+    [ -n "$nome" ] || continue
+    for linha in "${TIPOS_TOKEN[@]}"; do
+      IFS=';' read -r padrao tipo busca driver <<< "$linha"
+      echo "$nome" | grep -qiE "$padrao" || continue
+      achou=1
+      if [ -z "$busca" ]; then echo "${CINZA}   Token: $tipo conectado ${AMARELO}(driver nao vem no kit)${FIM}"
+      elif instalado "$busca"; then echo "${CINZA}   Token: $tipo conectado ${VERDE}(driver $driver instalado)${FIM}"
+      else echo "${CINZA}   Token: $tipo conectado ${VERMELHO}(FALTA o driver $driver: use Instalar programas)${FIM}"; fi
+      break
+    done
+  done <<< "$(nomes_usb)"
+  [ "$achou" = "1" ] || echo "${CINZA}   Token: nenhum conectado${FIM}"
 }
 
 ler_opcao() {
@@ -357,17 +393,26 @@ instalar_com_log() {
   echo "Log salvo em: $log"
 }
 
-menu_instalacao() {
+mostrar_comando_windows() {
+  echo
+  echo "${CIANO}   Este kit esta aberto num Mac. Para configurar um Windows, abra o${FIM}"
+  echo "${CIANO}   PowerShell como administrador (nao o CMD) no Windows e cole:${FIM}"
+  echo
+  echo "   irm $URL_SCRIPT_WIN | Out-String | iex"
+  echo
+}
+
+# Opcoes do Mac (so aparecem depois de escolher Mac na primeira tela)
+menu_mac() {
   while true; do
     cabecalho
-    echo "${CIANO}   INSTALACAO DE PROGRAMAS${FIM}"; echo
-    echo "   [1] Windows (mostra o comando)"
-    echo "   [2] Mac (este computador)"
+    echo "${CIANO}   MAC${FIM}"; echo
+    echo "   [1] Instalar programas"
+    echo "   [2] Correcao de erros"
     echo "   [0] Voltar"; echo
     case "$(ler_opcao 1 2 0)" in
-      1) echo; echo "${CIANO}   No Windows, abra o PowerShell (nao o CMD) como administrador e cole:${FIM}"; echo
-         echo "   irm $URL_SCRIPT_WIN | Out-String | iex"; pausar ;;
-      2) instalar_com_log; pausar ;;
+      1) instalar_com_log; pausar ;;
+      2) menu_correcoes ;;
       0) return ;;
     esac
   done
@@ -432,12 +477,13 @@ menu_correcoes() {
 
 while true; do
   cabecalho
-  echo "   [1] Instalacao de programas"
-  echo "   [2] Correcao de erros"
-  echo "   [3] Sair"; echo
-  case "$(ler_opcao 1 2 3)" in
-    1) menu_instalacao ;;
-    2) menu_correcoes ;;
-    3) echo; echo "${AMARELO}   Ate logo!${FIM}"; exit 0 ;;
+  echo "${CIANO}   Qual computador voce vai configurar?${FIM}"; echo
+  echo "   [1] Windows"
+  echo "   [2] Mac   (este computador)"
+  echo "   [0] Sair"; echo
+  case "$(ler_opcao 1 2 0)" in
+    1) mostrar_comando_windows; pausar ;;
+    2) menu_mac ;;
+    0) echo; echo "${AMARELO}   Ate logo!${FIM}"; exit 0 ;;
   esac
 done
