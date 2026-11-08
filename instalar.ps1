@@ -2,7 +2,7 @@
 #  instalar.ps1 - Kit de TI da CAAAL
 #
 #  Uso pela internet (CMD ou PowerShell):
-#    powershell -c "irm https://raw.githubusercontent.com/kit-signer/kit/main/instalar.ps1 | iex"
+#    powershell -c "irm https://raw.githubusercontent.com/kit-signer/kit/main/instalar.ps1 | Out-String | iex"
 #  Uso pelo pendrive:
 #    dois cliques no INSTALAR.bat (usa a pasta "instaladores" ao lado, sem baixar nada)
 #
@@ -17,7 +17,7 @@ $Repositorio = "kit-signer/kit"   # dono/repositorio no GitHub
 
 $UrlScript   = "https://raw.githubusercontent.com/$Repositorio/main/instalar.ps1"
 $UrlScriptMac = "https://raw.githubusercontent.com/$Repositorio/main/instalar.sh"
-$UrlArquivos = "https://github.com/$Repositorio/releases/latest/download"
+$UrlArquivos = "https://github.com/$Repositorio/releases/download/instaladores"
 
 $PastaTI = "C:\ProgramData\TI"
 
@@ -75,7 +75,7 @@ if (-not $ehAdmin) {
     if ($ArquivoDoScript) {
         Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ArquivoDoScript`""
     } else {
-        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm $UrlScript | iex`""
+        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm $UrlScript | Out-String | iex`""
     }
     return
 }

@@ -7,7 +7,7 @@ Instala e configura as máquinas da equipe com um comando só, e tem um menu de 
 **Windows** (CMD ou PowerShell, como administrador):
 
 ```
-powershell -c "irm https://raw.githubusercontent.com/kit-signer/kit/main/instalar.ps1 | iex"
+powershell -c "irm https://raw.githubusercontent.com/kit-signer/kit/main/instalar.ps1 | Out-String | iex"
 ```
 
 **Mac** (Terminal: Cmd+Espaço, digite "Terminal", Enter):
@@ -31,7 +31,7 @@ O menu tem três opções: instalação de programas (Windows ou Mac), correçã
 | `instalar.ps1` | Script do Windows |
 | `instalar.sh` | Script do Mac |
 | `INSTALAR.bat` / `INSTALAR.command` | Atalhos do pendrive |
-| `instaladores/` | Os instaladores dos dois sistemas. **Não vão para o repositório**: sobem no Release |
+| `instaladores/` | Os instaladores dos dois sistemas. **Não vão para o repositório**: sobem no Release `instaladores` |
 
 Os arquivos de Mac começam com `mac-`. No Mac, o script escolhe sozinho a versão certa de cada programa para a versão do macOS e o processador (Intel ou M1/M2/M3), e instala o Rosetta quando precisa.
 
@@ -46,7 +46,8 @@ Cada instalador tem a impressão digital (SHA256) escrita no script. Se o arquiv
 3. Atualize o script:
    - **Windows** (`instalar.ps1`, em `$InstaladoresKit`): troque `Versao`, `Arquivo` e `Sha256`.
    - **Mac** (`instalar.sh`, em `ARQUIVOS`): uma linha por arquivo, no formato `chave|arquivo|macOS mínimo|processador|sha256`. Para ter uma versão nova só para macOS 13 ou mais novo, por exemplo, acrescente uma linha com `13` em "macOS mínimo"; as antigas continuam valendo para os Macs mais velhos.
-4. Envie o script alterado e crie um **Release novo** com **todos** os instaladores. O comando sempre usa o Release mais recente.
+4. No GitHub, abra o Release **instaladores** › Edit. Apague o arquivo antigo, suba o novo **com o mesmo nome** e clique em Update release. Os outros arquivos ficam como estão.
+5. Envie o script alterado (`git commit` e `git push`). Faça isso logo depois do passo 4: até o script novo subir, as máquinas recusam o arquivo novo, porque a impressão digital ainda é a antiga.
 
 O comando não muda nunca.
 

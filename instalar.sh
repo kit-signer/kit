@@ -18,7 +18,7 @@ REPOSITORIO="kit-signer/kit"   # dono/repositorio no GitHub
 
 URL_SCRIPT="https://raw.githubusercontent.com/$REPOSITORIO/main/instalar.sh"
 URL_SCRIPT_WIN="https://raw.githubusercontent.com/$REPOSITORIO/main/instalar.ps1"
-URL_ARQUIVOS="https://github.com/$REPOSITORIO/releases/latest/download"
+URL_ARQUIVOS="https://github.com/$REPOSITORIO/releases/download/instaladores"
 
 # Pasta local para logs e downloads (sem espacos no caminho, de proposito)
 PASTA_TI="/Users/Shared/TI"
@@ -366,7 +366,7 @@ menu_instalacao() {
     echo "   [0] Voltar"; echo
     case "$(ler_opcao 1 2 0)" in
       1) echo; echo "${CIANO}   No Windows, abra o CMD ou o PowerShell como administrador e cole:${FIM}"; echo
-         echo "   powershell -c \"irm $URL_SCRIPT_WIN | iex\""; pausar ;;
+         echo "   powershell -c \"irm $URL_SCRIPT_WIN | Out-String | iex\""; pausar ;;
       2) instalar_com_log; pausar ;;
       0) return ;;
     esac
