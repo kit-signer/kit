@@ -56,15 +56,16 @@ $InstaladoresKit = @(
        Busca = "SafeNet Authentication Client"; Sha256 = "a998da33cab2d70675d5de9a8a114f870f643dba1f676f9586b263030c395e12" }
 )
 
-# Tipos de token reconhecidos no cabecalho, pelo nome que o aparelho USB informa.
-#   Padrao = trecho do nome (expressao regular, sem diferenciar maiusculas)
+# Tipos de token reconhecidos no cabecalho, pelo aparelho USB conectado.
+#   Padrao = trecho do nome que o USB informa (expressao regular, sem diferenciar maiusculas)
+#   Vid    = codigo do fabricante no USB (ajuda quando o nome e generico)
 #   Driver = como o driver aparece em "Aplicativos instalados" ($null = nao vem no kit)
 $TiposToken = @(
-    @{ Padrao = 'etoken|token jc|safenet|aladdin';                Tipo = "SafeNet eToken";         Driver = "SafeNet Authentication Client"; DriverNome = "SafeNet" },
-    @{ Padrao = 'idprime|gemalto';                                Tipo = "Thales/Gemalto IDPrime"; Driver = "SafeNet Authentication Client"; DriverNome = "SafeNet" },
-    @{ Padrao = 'starsign|giesecke|g&d|g\+d|smart ?cafe|sm@rtcafe'; Tipo = "G+D StarSign";         Driver = "SafeSign";                      DriverNome = "SafeSign" },
-    @{ Padrao = 'watchdata|proxkey';                              Tipo = "Watchdata";              Driver = $null;                           DriverNome = $null },
-    @{ Padrao = 'epass|feitian';                                  Tipo = "Feitian ePass";          Driver = $null;                           DriverNome = $null }
+    @{ Padrao = 'etoken|token jc|safenet|aladdin';                Vid = "0529"; Tipo = "SafeNet eToken";         Driver = "SafeNet Authentication Client"; DriverNome = "SafeNet" },
+    @{ Padrao = 'idprime|gemalto';                                Vid = "08E6"; Tipo = "Thales/Gemalto IDPrime"; Driver = "SafeNet Authentication Client"; DriverNome = "SafeNet" },
+    @{ Padrao = 'starsign|giesecke|g&d|g\+d|smart ?cafe|sm@rtcafe'; Vid = "";   Tipo = "G+D StarSign";           Driver = "SafeSign";                      DriverNome = "SafeSign" },
+    @{ Padrao = 'watchdata|proxkey';                              Vid = "";     Tipo = "Watchdata";              Driver = $null;                           DriverNome = $null },
+    @{ Padrao = 'epass|feitian';                                  Vid = "";     Tipo = "Feitian ePass";          Driver = $null;                           DriverNome = $null }
 )
 
 # Programas de uso pessoal que o kit instala mas NUNCA desinstala
@@ -186,20 +187,34 @@ function Mostrar-Cabecalho {
     Write-Host ""
 }
 
-# Leitores de cartao / tokens conectados agora. O tipo vem do nome que o USB informa
-# (o Windows costuma chamar todos de "Usbccid Smartcard Reader").
+# Tokens conectados agora. O tipo vem do nome que o USB informa (o Windows costuma
+# chamar todos de "Usbccid Smartcard Reader") ou do codigo do fabricante no USB.
+# So conta aparelho FISICO no USB: o driver do SafeNet cria leitores virtuais
+# ("Aladdin VR/IFD Handler", com Id ROOT\...) que existem mesmo sem token nenhum.
+# Cada token aparece uma vez so, mesmo que o Windows o divida em varias partes.
 function Ler-Tokens {
     $itens = @()
-    foreach ($d in @(Get-PnpDevice -PresentOnly -Class SmartCardReader -ErrorAction SilentlyContinue)) {
+    $vistos = @{}
+    $vids = @($TiposToken | Where-Object { $_.Vid } | ForEach-Object { $_.Vid })
+    foreach ($d in @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -like 'USB\VID_*' })) {
+        $vid = $(if ($d.InstanceId -match 'VID_([0-9A-F]{4})') { $Matches[1] } else { "" })
+        $leitor = $d.Class -in "SmartCardReader", "SmartCard"
+        $porNome = [bool]($TiposToken | Where-Object { "$($d.FriendlyName) $($d.Manufacturer)" -match $_.Padrao })
+        if (-not ($leitor -or $porNome -or ($vids -contains $vid))) { continue }
+        # mesmo aparelho = mesmo fabricante/modelo (VID/PID), sem o pedaco "&MI_xx" de cada parte
+        $chave = (($d.InstanceId -split '\\')[1] -replace '&MI_[0-9A-F]{2}', '')
+        if ($vistos.ContainsKey($chave)) { continue }
+        $vistos[$chave] = $true
         $usb = (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_BusReportedDeviceDesc' -ErrorAction SilentlyContinue).Data
-        $itens += Classificar-Token $usb $d.FriendlyName $d.Manufacturer
+        $itens += Classificar-Token $usb $d.FriendlyName $d.Manufacturer $vid
     }
     return $itens
 }
 
-function Classificar-Token($usb, $nomeWindows, $fabricante) {
+function Classificar-Token($usb, $nomeWindows, $fabricante, $vid = "") {
     $texto = "$usb $nomeWindows $fabricante"
     $tipo = $TiposToken | Where-Object { $texto -match $_.Padrao } | Select-Object -First 1
+    if (-not $tipo -and $vid) { $tipo = $TiposToken | Where-Object { $_.Vid -eq $vid } | Select-Object -First 1 }
     return [pscustomobject]@{
         Nome       = (@($usb, $nomeWindows) | Where-Object { $_ } | Select-Object -First 1)
         Tipo       = $(if ($tipo) { $tipo.Tipo } else { $null })
