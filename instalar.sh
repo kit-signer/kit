@@ -314,6 +314,14 @@ configurar_toggles_websigner() {
         mv -f "$p/prefs.js.tmp" "$p/prefs.js"
         chown "$USUARIO_TELA" "$p/prefs.js" 2>/dev/null
       fi
+      if [ -f "$p/user.js" ]; then
+        grep -vE 'ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall' "$p/user.js" > "$p/user.js.tmp"
+      else
+        : > "$p/user.js.tmp"
+      fi
+      printf 'user_pref("extensions.webextensions.keepStorageOnUninstall", true);\n' >> "$p/user.js.tmp"
+      mv -f "$p/user.js.tmp" "$p/user.js"
+      chown "$USUARIO_TELA" "$p/user.js" 2>/dev/null
       mkdir -p "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"
       printf '{"pkcs11":["libeToken.dylib","libaetpkss.dylib"],"trace":true}\n' > "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID/storage.js"
       chown -R "$USUARIO_TELA" "$p/browser-extension-data" 2>/dev/null
@@ -348,6 +356,12 @@ aplicar_extensao() {
       "$WEBSIGNER_FIREFOX_ID": {
         "installation_mode": "force_installed",
         "install_url": "file://$PASTA_TI/websigner.xpi"
+      }
+    },
+    "Preferences": {
+      "extensions.webextensions.keepStorageOnUninstall": {
+        "Value": true,
+        "Status": "default"
       }
     }
   }

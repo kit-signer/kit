@@ -380,7 +380,7 @@ function Configurar-TogglesWebSigner {
         [IO.File]::WriteAllBytes("$dirDb\000003.log", [Convert]::FromBase64String($logWinB64))
     }
 
-    # Firefox: grava storage.js e habilita keepStorageOnUninstall no prefs.js.
+    # Firefox: grava storage.js e habilita keepStorageOnUninstall no user.js/prefs.js e policies.json.
     # Sem keepStorageOnUninstall=true, no primeiro ADDON_INSTALL o Firefox marca a extensao
     # como ja migrada antes de abrir o storage.js (Extension.sys.mjs) e ignora o arquivo.
     $jsonFx = '{"pkcs11":["eTPKCS11.dll","aetpkss1.dll","asepkcs.dll"],"trace":true}'
@@ -401,8 +401,18 @@ function Configurar-TogglesWebSigner {
                 $_ -notmatch 'extensions\.webextensions\.keepStorageOnUninstall'
             })
             $linhasPrefs += 'user_pref("extensions.webextensions.keepStorageOnUninstall", true);'
-            [IO.File]::WriteAllLines($prefs, $linhasPrefs)
+            [IO.File]::WriteAllLines($prefs, ($linhasPrefs -as [string[]]))
         }
+        $userJs = Join-Path $d.FullName "user.js"
+        $linhasUser = @()
+        if (Test-Path $userJs) {
+            $linhasUser = @(Get-Content $userJs | Where-Object {
+                $_ -notmatch 'ExtensionStorageIDB\.migrated\.websigner@softplan_com_br' -and
+                $_ -notmatch 'extensions\.webextensions\.keepStorageOnUninstall'
+            })
+        }
+        $linhasUser += 'user_pref("extensions.webextensions.keepStorageOnUninstall", true);'
+        [IO.File]::WriteAllLines($userJs, ($linhasUser -as [string[]]))
         New-Item -ItemType Directory -Path $dirExt -Force | Out-Null
         [IO.File]::WriteAllText("$dirExt\storage.js", $jsonFx)
     }
@@ -449,6 +459,7 @@ function Gravar-PoliticaFirefox($extensao, $certificados) {
     if ($extensao) {
         $urlXpi = "file:///" + ("$PastaTI\websigner.xpi" -replace '\\', '/')
         $pol.ExtensionSettings = @{ $WebSignerFirefoxId = @{ installation_mode = "force_installed"; install_url = $urlXpi } }
+        $pol.Preferences = @{ "extensions.webextensions.keepStorageOnUninstall" = @{ Value = $true; Status = "default" } }
     }
     if ($certificados) {
         $pol.Certificates = @{ ImportEnterpriseRoots = $true }
