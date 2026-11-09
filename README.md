@@ -38,8 +38,6 @@ Se você escolher o outro sistema (Mac num Windows, ou Windows num Mac), o kit m
 
 **Token no cabeçalho:** o topo da tela mostra se tem um token conectado, de que tipo (SafeNet eToken, Thales/Gemalto IDPrime, G+D StarSign, Watchdata, Feitian ePass) e se o driver dele está instalado. No Windows, mostra também o certificado e até quando ele vale. O tipo é reconhecido pelo nome que o aparelho USB informa. Para reconhecer outro modelo, acrescente uma linha em `$TiposToken` (Windows) ou `TIPOS_TOKEN` (Mac).
 
-**Situação da máquina (Windows):** ao abrir "Correção de erros", o kit mostra antes da lista o que está instalado nesta máquina (PJeOffice, SafeNet, SafeSign e Web Signer, com a versão), a extensão Web Signer em cada navegador e se a cadeia ICP-Brasil está instalada. O que faltar aparece em vermelho, com a dica de usar "Instalar programas".
-
 **Histórico (Windows):** o kit apaga o próprio comando do histórico do PowerShell quando abre e de novo ao escolher Sair. Assim ninguém repete o comando com a seta para cima. Só saem as linhas com `kit-signer`; o resto do histórico fica. A lista da seta para cima daquela janela é zerada, porque o PowerShell não deixa tirar uma linha só. A cópia temporária que o kit cria para pedir administrador (`%TEMP%\kit-ti.ps1`) também é apagada. Isso ainda não existe no Mac: lá, o Terminal grava o histórico só quando é fechado, e o script não consegue apagar a linha antes disso.
 
 ### Desinstalar programas

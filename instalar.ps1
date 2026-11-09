@@ -989,43 +989,6 @@ function Verificar-WebSigner {
     }
 }
 
-function Versao-Instalada($busca) {
-    $e = Get-ItemProperty $ChavesDesinstalacao -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -like "*$busca*" } | Select-Object -First 1
-    if ($e) { return $e.DisplayVersion }
-    return $null
-}
-
-# Quadro mostrado ao abrir "Correcao de erros": o que esta instalado e configurado nesta maquina
-function Mostrar-SituacaoMaquina {
-    Write-Host "   SITUACAO DESTA MAQUINA" -ForegroundColor Cyan
-    $falta = $false
-    foreach ($p in (Programas-Desinstalaveis)) {
-        if (Test-Instalado $p.Busca) {
-            $v = Versao-Instalada $p.Busca
-            Write-Host ("   [OK]    {0,-22} {1}" -f $p.Nome, $v) -ForegroundColor Green
-        } else {
-            Write-Host ("   [FALTA] {0,-22} nao instalado" -f $p.Nome) -ForegroundColor Red
-            $falta = $true
-        }
-    }
-    $ext = @(Status-ExtensaoWebSigner)
-    if ($ext.Count) {
-        Write-Host "   Extensao Web Signer: " -NoNewline
-        foreach ($n in $ext) {
-            $cor = $(switch ($n.Estado) { "OK" { "Green" } "PENDENTE" { "Yellow" } default { "Red" } })
-            $txt = $(switch ($n.Estado) { "OK" { "ok" } "PENDENTE" { "abrir o navegador" } default { "falta" } })
-            Write-Host "$($n.Nome) ($txt)  " -ForegroundColor $cor -NoNewline
-            if ($n.Estado -eq "FALTA") { $falta = $true }
-        }
-        Write-Host ""
-    }
-    if (Cadeia-IcpInstalada) { Write-Host "   Cadeia ICP-Brasil:   instalada" -ForegroundColor Green }
-    else { Write-Host "   Cadeia ICP-Brasil:   falta (use 'Erro de conexao com certificado digital')" -ForegroundColor Red }
-    if ($falta) { Write-Host "   Para instalar o que falta: Voltar > Instalar programas." -ForegroundColor Yellow }
-    Write-Host ""
-}
-
 function Abrir-EmOutroNavegador {
     $site = $Tribunais[0]
     if ($Tribunais.Count -gt 1) {
@@ -1055,7 +1018,7 @@ function Abrir-EmOutroNavegador {
         Start-Process $n.Exe -ArgumentList $site.Url
     }
     Write-Host "  Abrindo $($site.Nome) no $($n.Nome). Se funcionar aqui, o problema e o outro navegador:" -ForegroundColor Green
-    Write-Host "  use 'Limpar cache e cookies' e confira a extensao no quadro do menu." -ForegroundColor Green
+    Write-Host "  use 'Limpar cache e cookies'." -ForegroundColor Green
 }
 
 function Acertar-Relogio {
@@ -1155,7 +1118,6 @@ $Correcoes = @(
 function Menu-Correcoes {
     while ($true) {
         Mostrar-Cabecalho
-        Mostrar-SituacaoMaquina
         Write-Host "   CORRECAO DE ERROS" -ForegroundColor Cyan
         Write-Host ""
         for ($i = 0; $i -lt $Correcoes.Count; $i++) {
