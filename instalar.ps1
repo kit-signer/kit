@@ -365,12 +365,29 @@ function Configurar-TogglesWebSigner {
         [IO.File]::WriteAllBytes("$dirDb\000003.log", [Convert]::FromBase64String($logWinB64))
     }
 
-    # Firefox: grava storage.js para o Firefox importar na primeira abertura
+    # Firefox: grava storage.js e habilita keepStorageOnUninstall no prefs.js.
+    # Sem keepStorageOnUninstall=true, no primeiro ADDON_INSTALL o Firefox marca a extensao
+    # como ja migrada antes de abrir o storage.js (Extension.sys.mjs) e ignora o arquivo.
     $jsonFx = '{"pkcs11":["eTPKCS11.dll","aetpkss1.dll","asepkcs.dll"],"trace":true}'
     foreach ($d in (Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue)) {
-        $prefs = Join-Path $d.FullName "prefs.js"
-        if ((Test-Path $prefs) -and ((Get-Content $prefs -Raw) -like "*ExtensionStorageIDB.migrated.$WebSignerFirefoxId*")) { continue }
         $dirExt = Join-Path $d.FullName "browser-extension-data\$WebSignerFirefoxId"
+        if (Get-ChildItem $dirExt -Filter "storage.js*.migrated" -File -ErrorAction SilentlyContinue) { continue }
+
+        $prefs = Join-Path $d.FullName "prefs.js"
+        if (Test-Path $prefs) {
+            $textoPrefs = Get-Content $prefs -Raw
+            if ($textoPrefs -match '"websigner@softplan_com_br"\s*:\s*\\?"([0-9a-fA-F-]+)\\?"') {
+                $uuidFx = $matches[1]
+                Get-ChildItem "$($d.FullName)\storage\default" -Filter "moz-extension+++$uuidFx*" -Directory -ErrorAction SilentlyContinue |
+                    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            $linhasPrefs = @(Get-Content $prefs | Where-Object {
+                $_ -notmatch 'ExtensionStorageIDB\.migrated\.websigner@softplan_com_br' -and
+                $_ -notmatch 'extensions\.webextensions\.keepStorageOnUninstall'
+            })
+            $linhasPrefs += 'user_pref("extensions.webextensions.keepStorageOnUninstall", true);'
+            [IO.File]::WriteAllLines($prefs, $linhasPrefs)
+        }
         New-Item -ItemType Directory -Path $dirExt -Force | Out-Null
         [IO.File]::WriteAllText("$dirExt\storage.js", $jsonFx)
     }
@@ -632,6 +649,10 @@ function Remover-ExtensaoWebSigner {
     Remover-ListaForcada "HKLM:\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist" $WebSignerChromeId
     [void](Gravar-PoliticaFirefox $false $null)
     Remove-Item "$PastaTI\websigner.xpi" -Force -ErrorAction SilentlyContinue
+    $perfil = Perfil-UsuarioTela
+    foreach ($d in (Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue)) {
+        Remove-Item "$($d.FullName)\browser-extension-data\$WebSignerFirefoxId" -Recurse -Force -ErrorAction SilentlyContinue
+    }
     Write-Host "  Extensao Web Signer liberada no Chrome, Edge e Firefox (agora pode ser removida)."
 }
 

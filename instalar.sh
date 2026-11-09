@@ -304,7 +304,16 @@ configurar_toggles_websigner() {
   if [ -d "$base_fx" ]; then
     for p in "$base_fx"/*; do
       [ -d "$p" ] || continue
-      grep -q "ExtensionStorageIDB.migrated.$WEBSIGNER_FIREFOX_ID" "$p/prefs.js" 2>/dev/null && continue
+      ls "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*.migrated >/dev/null 2>&1 && continue
+      if [ -f "$p/prefs.js" ]; then
+        local uuid_fx
+        uuid_fx="$(sed -n 's/.*"websigner@softplan_com_br"[[:space:]]*:[[:space:]]*\\*"\([0-9a-fA-F-]*\)\\*".*/\1/p' "$p/prefs.js" | head -1)"
+        [ -n "$uuid_fx" ] && rm -rf "$p/storage/default/moz-extension+++$uuid_fx"*
+        grep -vE 'ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall' "$p/prefs.js" > "$p/prefs.js.tmp"
+        printf 'user_pref("extensions.webextensions.keepStorageOnUninstall", true);\n' >> "$p/prefs.js.tmp"
+        mv -f "$p/prefs.js.tmp" "$p/prefs.js"
+        chown "$USUARIO_TELA" "$p/prefs.js" 2>/dev/null
+      fi
       mkdir -p "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"
       printf '{"pkcs11":["libeToken.dylib","libaetpkss.dylib"],"trace":true}\n' > "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID/storage.js"
       chown -R "$USUARIO_TELA" "$p/browser-extension-data" 2>/dev/null
