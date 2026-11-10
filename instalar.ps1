@@ -61,7 +61,11 @@ $InstaladoresKit = @(
        Busca = "PJeOffice"; Sha256 = "8237999eff5313607daf53558b4a0b8f3aba4da670c6438ee34eb25120b45bc4" },
     @{ Nome = "SafeNet (token)";    Versao = "10.7";    Arquivo = "safenet.msi";   Argumentos = "/qn /norestart";
        Busca = "SafeNet Authentication Client"; Sha256 = "a998da33cab2d70675d5de9a8a114f870f643dba1f676f9586b263030c395e12" },
-    @{ Nome = "Driver do token GD"; Versao = "3.0.124"; Arquivo = "safesign.exe";  Argumentos = '/s /v"/qn /norestart"';
+    # REMOVE=Firefox: pula o recurso "Install SafeSign in Firefox", que abria a janela "Instalador Firefox"
+    # (tokenadmin.exe -netscapeinstaller). O kit ja configura o token no Firefox pela politica.
+    # ArgumentosReserva: se a versao do instalador nao aceitar o REMOVE=Firefox, instala do jeito antigo.
+    @{ Nome = "Driver do token GD"; Versao = "3.0.124"; Arquivo = "safesign.exe";  Argumentos = '/s /v"/qn /norestart REMOVE=Firefox"';
+       ArgumentosReserva = '/s /v"/qn /norestart"';
        Busca = "SafeSign"; Sha256 = "0dad976c832526f494f665661fb8b47a93c5f9b969bc9b7d5496d6dd87ae6dfe" }
 )
 
@@ -862,6 +866,10 @@ function Instalar-Windows {
         if (-not $arquivo) { continue }
         Write-Host "Instalando $($p.Nome) $($p.Versao)..."
         $codigo = Executar-Instalador $arquivo $p.Argumentos
+        if ($p.ArgumentosReserva -and $codigo -notin 0, 3010 -and -not (Test-Instalado $p.Busca)) {
+            Write-Host "  Nao deu do jeito sem janela (codigo $codigo). Instalando do jeito antigo..." -ForegroundColor Yellow
+            $codigo = Executar-Instalador $arquivo $p.ArgumentosReserva
+        }
         if ($null -eq $codigo) {
             Write-Host "  O instalador passou de $MinutosLimite minutos sem terminar. Seguindo para o proximo." -ForegroundColor Yellow
         } elseif ($codigo -notin 0, 3010) {

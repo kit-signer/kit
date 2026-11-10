@@ -69,7 +69,7 @@ Remove só os **programas do kit**: PJeOffice, SafeNet, SafeSign e Web Signer. O
 | Web Signer | winget, com **versão fixa**. Plano B: `websigner.msi` do Release |
 | PJeOffice Pro | Release `instaladores` do GitHub (não está no winget) |
 | SafeNet 10.7 | Release. No winget vem num pacote de 142 MB e demora muito; o nosso `safenet.msi` tem 15 MB |
-| SafeSign 3.0.124 (driver do token GD) | Release. No winget vinha de um link que o fabricante altera, e a instalação falhava |
+| SafeSign 3.0.124 (driver do token GD) | Release. No winget vinha de um link que o fabricante altera, e a instalação falhava. Instala com `REMOVE=Firefox` para não abrir a janela "Instalador Firefox"; se essa versão recusar, instala do jeito antigo (com a janela) |
 
 O winget é o catálogo de programas da Microsoft: baixa do site do fabricante e confere a impressão digital. Precisa de internet.
 
