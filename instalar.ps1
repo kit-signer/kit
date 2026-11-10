@@ -56,7 +56,8 @@ $ProgramasWinget = @(
 # Ao atualizar um programa: troque o arquivo no Release "instaladores" (mesmo nome)
 # e troque Versao e Sha256 aqui.
 $InstaladoresKit = @(
-    @{ Nome = "PJeOffice Pro";      Versao = "2.5.16u"; Arquivo = "pjeoffice.exe"; Argumentos = "/S";
+    # PJeOffice usa instalador "Inno Setup": o modo silencioso e /VERYSILENT (o /S e de outro tipo e abria a janela)
+    @{ Nome = "PJeOffice Pro";      Versao = "2.5.16u"; Arquivo = "pjeoffice.exe"; Argumentos = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-";
        Busca = "PJeOffice"; Sha256 = "8237999eff5313607daf53558b4a0b8f3aba4da670c6438ee34eb25120b45bc4" },
     @{ Nome = "SafeNet (token)";    Versao = "10.7";    Arquivo = "safenet.msi";   Argumentos = "/qn /norestart";
        Busca = "SafeNet Authentication Client"; Sha256 = "a998da33cab2d70675d5de9a8a114f870f643dba1f676f9586b263030c395e12" },
