@@ -866,8 +866,10 @@ function Instalar-Windows {
         if (-not $arquivo) { continue }
         Write-Host "Instalando $($p.Nome) $($p.Versao)..."
         $codigo = Executar-Instalador $arquivo $p.Argumentos
-        if ($p.ArgumentosReserva -and $codigo -notin 0, 3010 -and -not (Test-Instalado $p.Busca)) {
-            Write-Host "  Nao deu do jeito sem janela (codigo $codigo). Instalando do jeito antigo..." -ForegroundColor Yellow
+        # Confere se instalou de verdade: o SafeSign 3.0.124 com REMOVE=Firefox responde "sucesso"
+        # (codigo 0) sem instalar nada. Por isso nao da para confiar so no codigo de saida.
+        if ($p.ArgumentosReserva -and -not (Test-Instalado $p.Busca)) {
+            Write-Host "  Nao instalou do jeito sem janela (codigo $codigo). Instalando do jeito antigo..." -ForegroundColor Yellow
             $codigo = Executar-Instalador $arquivo $p.ArgumentosReserva
         }
         if ($null -eq $codigo) {
