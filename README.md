@@ -48,7 +48,8 @@ Remove só os **programas do kit**: PJeOffice, SafeNet, SafeSign e Web Signer. O
 
 - Dá para escolher um programa ou **[T] Todos** os que estão instalados. A remoção começa direto, sem pedir confirmação.
 - Remove sem janelas, fechando antes o programa se estiver aberto (o PJeOffice fica em segundo plano).
-- Ao remover o Web Signer, tira também a extensão forçada dos navegadores. Só a entrada do Web Signer sai: outras extensões forçadas continuam.
+- Ao remover o Web Signer, **exclui também a extensão** do Chrome, Edge e Firefox. O kit usa a regra oficial de cada navegador para isso (`removed` no Chrome/Edge, `blocked` no Firefox), então a extensão some quando o navegador abre e não volta sozinha. Instalar de novo pelo kit desfaz essa regra. Só o Web Signer é afetado: outras extensões e regras continuam como estavam.
+- Para só **liberar** a remoção (a extensão continua, mas o usuário pode tirar), use "Correção de erros › Liberar remocao da extensao Web Signer".
 - A cadeia de certificados ICP-Brasil **não** é removida: ela não atrapalha e é usada por outros programas e sites.
 - Log em `C:\ProgramData\TI\logs\desinstalar-...txt`.
 

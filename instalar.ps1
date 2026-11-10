@@ -523,6 +523,9 @@ function Configurar-TogglesWebSigner {
 
 function Aplicar-ExtensaoWebSigner {
     $valorLoja = "$WebSignerChromeId;$ChromeStoreUpdate"
+    # se a extensao tinha sido excluida antes (modo "removed"), tira essa regra
+    Definir-ModoExtensaoChromium "HKLM:\SOFTWARE\Policies\Google\Chrome" $null
+    Definir-ModoExtensaoChromium "HKLM:\SOFTWARE\Policies\Microsoft\Edge" $null
     Add-ListaForcada "HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist" $valorLoja
     Write-Host "Chrome: extensao forcada."
     Add-ListaForcada "HKLM:\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist" $valorLoja
@@ -546,6 +549,8 @@ function Aplicar-ExtensaoWebSigner {
 #   extensao     = Web Signer forcada
 #   certificados = usar os certificados do Windows + carregar os modulos dos tokens
 # Cada parametro: $true (liga), $false (desliga) ou $null (mantem como esta).
+# A extensao aceita tambem "bloqueada": o Firefox remove a extensao e nao deixa reinstalar
+# (usado ao desinstalar o Web Signer; instalar de novo pelo kit volta para forcada).
 # Assim uma parte nao apaga a outra. Devolve $false se nao houver Firefox.
 function Gravar-PoliticaFirefox($extensao, $certificados) {
     $pastaFirefox = Pasta-Firefox
@@ -553,11 +558,18 @@ function Gravar-PoliticaFirefox($extensao, $certificados) {
     $dist = Join-Path $pastaFirefox "distribution"
     $arqPol = Join-Path $dist "policies.json"
     $atual = $(if (Test-Path $arqPol) { Get-Content $arqPol -Raw } else { "" })
-    if ($null -eq $extensao)     { $extensao = $atual -like "*$WebSignerFirefoxId*" }
+    if ($null -eq $extensao) {
+        if ($atual -like "*$WebSignerFirefoxId*" -and $atual -like "*force_installed*") { $extensao = $true }
+        elseif ($atual -like "*$WebSignerFirefoxId*" -and $atual -like "*blocked*") { $extensao = "bloqueada" }
+        else { $extensao = $false }
+    }
     if ($null -eq $certificados) { $certificados = $atual -like "*ImportEnterpriseRoots*" }
 
     $pol = @{}
-    if ($extensao) {
+    # cuidado: no PowerShell "$true -eq 'texto'" da verdadeiro, por isso confere o tipo
+    if ($extensao -is [string] -and $extensao -eq "bloqueada") {
+        $pol.ExtensionSettings = @{ $WebSignerFirefoxId = @{ installation_mode = "blocked" } }
+    } elseif ($extensao -is [bool] -and $extensao) {
         $urlXpi = "file:///" + ("$PastaTI\websigner.xpi" -replace '\\', '/')
         $pol.ExtensionSettings = @{ $WebSignerFirefoxId = @{ installation_mode = "force_installed"; install_url = $urlXpi } }
         $pol.Preferences = @{ "extensions.webextensions.keepStorageOnUninstall" = @{ Value = $true; Status = "default" } }
@@ -771,16 +783,50 @@ function Remover-ListaForcada($chave, $prefixo) {
     if (-not $restam) { Remove-Item $chave -Force }
 }
 
+# Politica "ExtensionSettings" do Chrome/Edge (texto JSON no registro), so a parte do Web Signer.
+#   $modo = "removed": o navegador exclui a extensao e nao deixa instalar de novo
+#   $modo = $null:     tira a regra do Web Signer (o resto da politica fica como estava)
+function Definir-ModoExtensaoChromium($base, $modo) {
+    if (-not (Test-Path $base)) {
+        if (-not $modo) { return }
+        New-Item -Path $base -Force | Out-Null
+    }
+    $atual = (Get-ItemProperty $base -Name ExtensionSettings -ErrorAction SilentlyContinue).ExtensionSettings
+    $regras = @{}
+    if ($atual) {
+        try { foreach ($pr in ($atual | ConvertFrom-Json).PSObject.Properties) { $regras[$pr.Name] = $pr.Value } } catch { }
+    }
+    if ($modo) { $regras[$WebSignerChromeId] = @{ installation_mode = $modo } }
+    else { $regras.Remove($WebSignerChromeId) }
+    if ($regras.Count) {
+        Set-ItemProperty -Path $base -Name ExtensionSettings -Value ($regras | ConvertTo-Json -Depth 5 -Compress) -Type String
+    } else {
+        Remove-ItemProperty -Path $base -Name ExtensionSettings -ErrorAction SilentlyContinue
+    }
+}
+
+# Tira so a trava do Web Signer: a extensao continua no navegador e o usuario pode remover
+function Liberar-ExtensaoWebSigner {
+    Remover-ListaForcada "HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist" $WebSignerChromeId
+    Remover-ListaForcada "HKLM:\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist" $WebSignerChromeId
+    Definir-ModoExtensaoChromium "HKLM:\SOFTWARE\Policies\Google\Chrome" $null
+    Definir-ModoExtensaoChromium "HKLM:\SOFTWARE\Policies\Microsoft\Edge" $null
+    [void](Gravar-PoliticaFirefox $false $null)
+}
+
+# Exclui a extensao Web Signer dos navegadores (usado ao desinstalar o Web Signer)
 function Remover-ExtensaoWebSigner {
     Remover-ListaForcada "HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist" $WebSignerChromeId
     Remover-ListaForcada "HKLM:\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist" $WebSignerChromeId
-    [void](Gravar-PoliticaFirefox $false $null)
+    Definir-ModoExtensaoChromium "HKLM:\SOFTWARE\Policies\Google\Chrome" "removed"
+    Definir-ModoExtensaoChromium "HKLM:\SOFTWARE\Policies\Microsoft\Edge" "removed"
+    [void](Gravar-PoliticaFirefox "bloqueada" $null)
     Remove-Item "$PastaTI\websigner.xpi" -Force -ErrorAction SilentlyContinue
     $perfil = Perfil-UsuarioTela
     foreach ($d in (Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue)) {
         Remove-Item "$($d.FullName)\browser-extension-data\$WebSignerFirefoxId" -Recurse -Force -ErrorAction SilentlyContinue
     }
-    Write-Host "  Extensao Web Signer liberada no Chrome, Edge e Firefox (agora pode ser removida)."
+    Write-Host "  Extensao Web Signer excluida do Chrome, Edge e Firefox (some ao abrir o navegador)."
 }
 
 function Menu-Desinstalar {
@@ -1215,7 +1261,7 @@ function Status-ExtensaoWebSigner {
     $pastaFirefox = Pasta-Firefox
     if ($pastaFirefox) {
         $pol = "$pastaFirefox\distribution\policies.json"
-        $politica = (Test-Path $pol) -and ((Get-Content $pol -Raw) -like "*$WebSignerFirefoxId*")
+        $politica = (Test-Path $pol) -and ((Get-Content $pol -Raw) -like "*$WebSignerFirefoxId*") -and ((Get-Content $pol -Raw) -like "*force_installed*")
         $baixada = [bool](Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles\*\extensions\$WebSignerFirefoxId.xpi" -ErrorAction SilentlyContinue)
         $lista += [pscustomobject]@{ Nome = "Firefox"; Estado = $(if ($politica -and $baixada) { "OK" } elseif ($politica) { "PENDENTE" } else { "FALTA" }) }
     }
@@ -1356,13 +1402,11 @@ $Correcoes = @(
         }
     },
     @{
-        Nome = "Excluir extensoes dos navegadores"
-        Descricao = "Exclui do Chrome, Edge e Firefox as extensoes forcadas (inclusive a Web Signer)."
+        Nome = "Liberar remocao da extensao Web Signer"
+        Descricao = "Tira a trava do Chrome, Edge e Firefox: a extensao continua, mas o usuario passa a poder remover."
         Acao = {
-            Remove-Item "HKLM:\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist" -Recurse -ErrorAction SilentlyContinue
-            Remove-Item "HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist" -Recurse -ErrorAction SilentlyContinue
-            [void](Gravar-PoliticaFirefox $false $null)
-            Write-Host "  Pronto. Feche e abra os navegadores: as extensoes forcadas somem." -ForegroundColor Green
+            Liberar-ExtensaoWebSigner
+            Write-Host "  Pronto. Feche e abra os navegadores: a extensao Web Signer pode ser removida pelo usuario." -ForegroundColor Green
         }
     }
 )
