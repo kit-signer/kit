@@ -535,7 +535,7 @@ menu_correcoes() {
     [ "$op" = "0" ] && return
     IFS='|' read -r nome desc <<< "${CORRECOES[$((op - 1))]}"
     titulo "$nome"
-    if [ "$(perguntar "Confirmar? (S/N) " | tr '[:lower:]' '[:upper:]')" = "S" ]; then "corrigir_$op"; else echo "  Cancelado."; fi
+    "corrigir_$op"
     pausar
   done
 }

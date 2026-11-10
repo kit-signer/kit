@@ -24,24 +24,30 @@ $PastaTI = "C:\ProgramData\TI"
 
 # Programas instalados pelo winget (catalogo da Microsoft: baixa do site do fabricante
 # e confere a impressao digital do arquivo).
-#   Busca    = trecho do nome que aparece em "Aplicativos instalados"
-#   Versao   = versao fixa. Sem Versao, instala a mais nova. Para atualizar, troque aqui
-#              (veja as versoes com: winget show --id ID --versions).
-#   Pendrive = plano B SEM internet: so e usado quando o kit roda do pendrive e o winget
-#              nao conseguiu instalar. O arquivo fica na pasta "instaladores" do pendrive.
+#   Busca   = trecho do nome que aparece em "Aplicativos instalados"
+#   Versao  = versao fixa. Sem Versao, instala a mais nova. Para atualizar, troque aqui
+#             (veja as versoes com: winget show --id ID --versions).
+#   Escopo  = "machine": instala para a maquina toda (Arquivos de Programas). Sem isso o
+#             winget pode instalar so para o usuario, em outra pasta.
+#   Reserva = plano B quando o winget nao existe (Windows 10 antigo) ou falha:
+#               Url + Assinante: baixa do site do fabricante e SO instala se o arquivo
+#                                estiver assinado digitalmente por esse fabricante
+#               Release + Sha256: usa o arquivo do Release do kit (ou do pendrive)
 $ProgramasWinget = @(
-    @{ Nome = "WinRAR";          Id = "RARLab.WinRAR";   Busca = "WinRAR" },
-    @{ Nome = "Google Chrome";   Id = "Google.Chrome";   Busca = "Google Chrome" },
-    @{ Nome = "Mozilla Firefox"; Id = "Mozilla.Firefox"; Busca = "Mozilla Firefox" },
-    @{ Nome = "Driver do token GD"; Id = "AETEurope.SafeSignICStandard"; Versao = "3.5.3.0"; Busca = "SafeSign"
-       Pendrive = @{ Arquivo = "safesign.exe"; Argumentos = '/s /v"/qn /norestart"'; Sha256 = "0dad976c832526f494f665661fb8b47a93c5f9b969bc9b7d5496d6dd87ae6dfe" } },
+    @{ Nome = "WinRAR"; Id = "RARLab.WinRAR"; Escopo = "machine"; Busca = "WinRAR"
+       Reserva = @{ Url = "https://www.rarlab.com/rar/winrar-x64-723br.exe"; Arquivo = "winrar.exe"; Argumentos = "/S"; Assinante = "win.rar GmbH" } },
+    @{ Nome = "Google Chrome"; Id = "Google.Chrome"; Escopo = "machine"; Busca = "Google Chrome"
+       Reserva = @{ Url = "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi"; Arquivo = "chrome.msi"; Argumentos = "/qn /norestart"; Assinante = "Google LLC" } },
+    @{ Nome = "Mozilla Firefox"; Id = "Mozilla.Firefox"; Escopo = "machine"; Busca = "Mozilla Firefox"
+       Reserva = @{ Url = "https://download.mozilla.org/?product=firefox-msi-latest-ssl&os=win64&lang=pt-BR"; Arquivo = "firefox.msi"; Argumentos = "/qn /norestart"; Assinante = "Mozilla Corporation" } },
     @{ Nome = "Web Signer"; Id = "SoftplanSistemas.WebSigner"; Versao = "2.15.0.0"; Busca = "Web Signer"
-       Pendrive = @{ Arquivo = "websigner.msi"; Argumentos = "/qn /norestart"; Sha256 = "e66d0df97ff28272d4535b19f1ac3c67b13bc7ab3fb695e27ba72e5a1f4be0a3" } }
+       Reserva = @{ Release = "websigner.msi"; Argumentos = "/qn /norestart"; Sha256 = "e66d0df97ff28272d4535b19f1ac3c67b13bc7ab3fb695e27ba72e5a1f4be0a3" } }
 )
 
 # Instaladores baixados do Release do GitHub (ou da pasta "instaladores" do pendrive).
-# Aqui ficam os que nao estao no winget e os que no winget sao lentos demais: o SafeNet
-# do winget vem num pacote de 142 MB da DigiCert; o nosso safenet.msi tem 15 MB.
+# Aqui ficam os que nao estao no winget e os que no winget dao problema: o SafeNet
+# do winget vem num pacote de 142 MB da DigiCert (o nosso tem 15 MB), e o SafeSign do
+# winget vem de um link que o fabricante altera, o que fazia a instalacao falhar.
 #   Arquivo    = nome exato do arquivo no Release (sem espacos)
 #   Sha256     = impressao digital do arquivo. Se o arquivo baixado nao bater, NAO instala.
 #                Para gerar: Get-FileHash .\arquivo.exe -Algorithm SHA256
@@ -53,7 +59,9 @@ $InstaladoresKit = @(
     @{ Nome = "PJeOffice Pro";      Versao = "2.5.16u"; Arquivo = "pjeoffice.exe"; Argumentos = "/S";
        Busca = "PJeOffice"; Sha256 = "8237999eff5313607daf53558b4a0b8f3aba4da670c6438ee34eb25120b45bc4" },
     @{ Nome = "SafeNet (token)";    Versao = "10.7";    Arquivo = "safenet.msi";   Argumentos = "/qn /norestart";
-       Busca = "SafeNet Authentication Client"; Sha256 = "a998da33cab2d70675d5de9a8a114f870f643dba1f676f9586b263030c395e12" }
+       Busca = "SafeNet Authentication Client"; Sha256 = "a998da33cab2d70675d5de9a8a114f870f643dba1f676f9586b263030c395e12" },
+    @{ Nome = "Driver do token GD"; Versao = "3.0.124"; Arquivo = "safesign.exe";  Argumentos = '/s /v"/qn /norestart"';
+       Busca = "SafeSign"; Sha256 = "0dad976c832526f494f665661fb8b47a93c5f9b969bc9b7d5496d6dd87ae6dfe" }
 )
 
 # Tipos de token reconhecidos no cabecalho, pelo aparelho USB conectado.
@@ -162,6 +170,69 @@ if (-not $ehAdmin) {
 
 New-Item -ItemType Directory -Path "$PastaTI\logs", "$PastaTI\instaladores" -Force | Out-Null
 
+# Funcoes do Windows usadas pelo kit:
+#   Console = desligar a "Edicao Rapida" (com ela ligada, um clique na janela congela o kit)
+#   Cartao  = saber se a chave de um certificado esta no token conectado AGORA, sem pedir PIN
+$CodigoKitTI = @'
+using System;
+using System.Runtime.InteropServices;
+namespace KitTI {
+    public static class Console {
+        [DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int n);
+        [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr h, out uint modo);
+        [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr h, uint modo);
+    }
+    public static class Cartao {
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct InfoChave { public string Recipiente; public string Provedor; public uint TipoProvedor; public uint Flags; public uint QtdParam; public IntPtr Params; public uint TipoChave; }
+        [DllImport("crypt32.dll", SetLastError = true)] static extern bool CertGetCertificateContextProperty(IntPtr ctx, uint id, IntPtr dados, ref uint tam);
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool CryptAcquireContext(out IntPtr h, string recipiente, string provedor, uint tipo, uint flags);
+        [DllImport("advapi32.dll")] static extern bool CryptReleaseContext(IntPtr h, uint flags);
+        [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] static extern int NCryptOpenStorageProvider(out IntPtr h, string nome, uint flags);
+        [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] static extern int NCryptOpenKey(IntPtr prov, out IntPtr chave, string nome, uint tipo, uint flags);
+        [DllImport("ncrypt.dll")] static extern int NCryptFreeObject(IntPtr h);
+        const uint SILENCIOSO = 0x40;   // nunca abre janela nem pede PIN
+        public static bool ChavePresente(IntPtr ctx) {
+            uint tam = 0;
+            if (!CertGetCertificateContextProperty(ctx, 2, IntPtr.Zero, ref tam)) return false;
+            IntPtr buf = Marshal.AllocHGlobal((int)tam);
+            try {
+                if (!CertGetCertificateContextProperty(ctx, 2, buf, ref tam)) return false;
+                InfoChave i = (InfoChave)Marshal.PtrToStructure(buf, typeof(InfoChave));
+                if (i.TipoProvedor == 0) {
+                    IntPtr prov, chave;
+                    if (NCryptOpenStorageProvider(out prov, i.Provedor, 0) != 0) return false;
+                    try {
+                        if (NCryptOpenKey(prov, out chave, i.Recipiente, i.TipoChave, SILENCIOSO) != 0) return false;
+                        NCryptFreeObject(chave);
+                        return true;
+                    } finally { NCryptFreeObject(prov); }
+                }
+                IntPtr h;
+                if (!CryptAcquireContext(out h, i.Recipiente, i.Provedor, i.TipoProvedor, SILENCIOSO)) return false;
+                CryptReleaseContext(h, 0);
+                return true;
+            } finally { Marshal.FreeHGlobal(buf); }
+        }
+    }
+}
+'@
+if (-not ('KitTI.Cartao' -as [type])) {
+    try { Add-Type -TypeDefinition $CodigoKitTI -ErrorAction Stop } catch { }
+}
+
+function Desligar-EdicaoRapida {
+    if (-not ('KitTI.Console' -as [type])) { return }
+    $h = [KitTI.Console]::GetStdHandle(-10)
+    $modo = [uint32]0
+    if ([KitTI.Console]::GetConsoleMode($h, [ref]$modo)) {
+        # tira ENABLE_QUICK_EDIT_MODE (0x40) e liga ENABLE_EXTENDED_FLAGS (0x80) para valer
+        $novo = [uint32](([uint32]$modo -band [uint32]4294967231) -bor [uint32]128)
+        [void][KitTI.Console]::SetConsoleMode($h, $novo)
+    }
+}
+Desligar-EdicaoRapida
+
 # A copia em %TEMP% (usada so para pedir administrador) ja foi lida inteira: pode apagar
 if ($ArquivoDoScript -and (Split-Path $ArquivoDoScript -Leaf) -eq "kit-ti.ps1") {
     Remove-Item $ArquivoDoScript -Force -ErrorAction SilentlyContinue
@@ -240,14 +311,23 @@ function Mostrar-StatusToken {
         elseif (Test-Instalado $t.Driver) { Write-Host "(driver $($t.DriverNome) instalado)" -ForegroundColor Green }
         else { Write-Host "(FALTA o driver $($t.DriverNome): use Instalar programas)" -ForegroundColor Red }
     }
-    $cert = @(Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue |
-        Where-Object { $_.Issuer -match "ICP-Brasil" -and $_.HasPrivateKey } | Sort-Object NotAfter -Descending) | Select-Object -First 1
-    if ($cert) {
+    if ($null -eq $script:CacheToken.Certificados) { $script:CacheToken.Certificados = @(Certificados-NoToken) }
+    foreach ($cert in $script:CacheToken.Certificados) {
         $nome = ($cert.GetNameInfo("SimpleName", $false) -split ':')[0]
         $vence = $cert.NotAfter.ToString('dd/MM/yyyy')
         if ($cert.NotAfter -lt (Get-Date)) { Write-Host "   Certificado: $nome - VENCIDO em $vence" -ForegroundColor Red }
         else { Write-Host "   Certificado: $nome - vale ate $vence" -ForegroundColor Gray }
     }
+}
+
+# Certificados ICP-Brasil cuja chave esta no token conectado AGORA.
+# O Windows guarda os certificados de todo token que ja foi usado na maquina; aqui so
+# entram os que tem a chave presente (perguntado em modo silencioso: sem janela, sem PIN).
+function Certificados-NoToken {
+    $todos = @(Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue |
+        Where-Object { $_.Issuer -match "ICP-Brasil" -and $_.HasPrivateKey })
+    if (-not ('KitTI.Cartao' -as [type])) { return @() }
+    return @($todos | Where-Object { try { [KitTI.Cartao]::ChavePresente($_.Handle) } catch { $false } } | Sort-Object NotAfter -Descending)
 }
 
 function Ler-Opcao($validas) {
@@ -297,6 +377,10 @@ function Obter-Arquivo($arquivo, $sha256) {
     }
     $destino = Join-Path "$PastaTI\instaladores" $arquivo
     if (Hash-Confere $destino $sha256) { return $destino }
+    if (Aguardar-DownloadEmSegundoPlano $arquivo) {
+        if (Hash-Confere $destino $sha256) { return $destino }
+        Write-Host "  O download em segundo plano de $arquivo falhou. Baixando de novo..." -ForegroundColor Yellow
+    }
 
     Write-Host "  Baixando $arquivo..."
     $url = "$UrlArquivos/$arquivo"
@@ -342,7 +426,9 @@ function Add-ListaForcada($chave, $valor) {
 }
 
 function Pasta-Firefox {
-    return @("C:\Program Files\Mozilla Firefox", "C:\Program Files (x86)\Mozilla Firefox") |
+    # tambem a instalacao "so do usuario" (AppData\Local), que o winget as vezes escolhe
+    $perfil = Perfil-UsuarioTela
+    return @("C:\Program Files\Mozilla Firefox", "C:\Program Files (x86)\Mozilla Firefox", "$perfil\AppData\Local\Mozilla Firefox") |
         Where-Object { Test-Path "$_\firefox.exe" } | Select-Object -First 1
 }
 
@@ -360,8 +446,15 @@ function Configurar-TogglesWebSigner {
     $logWinB64   = "O4Mwm04AAQEAAAAAAAAAAgAAAAEGcGtjczExLVsiZVRQS0NTMTEuZGxsIiwiYWV0cGtzczEuZGxsIiwiYXNlcGtjcy5kbGwiXQEFdHJhY2UEdHJ1ZQ=="
 
     $perfis = @(Pastas-PerfisChromium $perfil)
-    foreach ($base in "$perfil\AppData\Local\Google\Chrome\User Data", "$perfil\AppData\Local\Microsoft\Edge\User Data") {
-        if ((Test-Path (Split-Path $base)) -and ($perfis -notcontains "$base\Default")) { $perfis += "$base\Default" }
+    # Navegador recem-instalado ainda nao tem perfil (so cria ao abrir pela primeira vez).
+    # Cria o perfil "Default" para os toggles ja estarem la quando ele abrir.
+    $navegadores = @(
+        @{ Base = "$perfil\AppData\Local\Google\Chrome\User Data"; Exe = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe", "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe", "$perfil\AppData\Local\Google\Chrome\Application\chrome.exe" },
+        @{ Base = "$perfil\AppData\Local\Microsoft\Edge\User Data"; Exe = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe" }
+    )
+    foreach ($n in $navegadores) {
+        $instalado = [bool]($n.Exe | Where-Object { Test-Path $_ })
+        if (($instalado -or (Test-Path $n.Base)) -and ($perfis -notcontains "$($n.Base)\Default")) { $perfis += "$($n.Base)\Default" }
     }
 
     foreach ($p in ($perfis | Select-Object -Unique)) {
@@ -384,7 +477,11 @@ function Configurar-TogglesWebSigner {
     # Sem keepStorageOnUninstall=true, no primeiro ADDON_INSTALL o Firefox marca a extensao
     # como ja migrada antes de abrir o storage.js (Extension.sys.mjs) e ignora o arquivo.
     $jsonFx = '{"pkcs11":["eTPKCS11.dll","aetpkss1.dll","asepkcs.dll"],"trace":true}'
-    foreach ($d in (Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue)) {
+    $perfisFx = @(Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue)
+    if ((Pasta-Firefox) -and $perfisFx.Count -eq 0) {
+        Write-Host "Firefox ainda sem perfil: abra o Firefox uma vez, feche e rode 'Instalar programas' de novo para ativar os toggles nele." -ForegroundColor Yellow
+    }
+    foreach ($d in $perfisFx) {
         $dirExt = Join-Path $d.FullName "browser-extension-data\$WebSignerFirefoxId"
         if (Get-ChildItem $dirExt -Filter "storage.js*.migrated" -File -ErrorAction SilentlyContinue) { continue }
 
@@ -543,9 +640,9 @@ function Cadeia-IcpInstalada {
 
 function Corrigir-CertificadoDigital {
     Titulo "1/4 Certificado do token"
-    $meus = @(Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue | Where-Object { $_.Issuer -match "ICP-Brasil" -and $_.HasPrivateKey })
+    $meus = @(Certificados-NoToken)
     if ($meus.Count -eq 0) {
-        Write-Host "  Nenhum certificado do token apareceu no Windows." -ForegroundColor Red
+        Write-Host "  Nenhum certificado do token conectado apareceu no Windows." -ForegroundColor Red
         Write-Host "  Confira se o token esta conectado e se o driver esta instalado ('Token nao reconhecido')." -ForegroundColor Red
         Write-Host "  (Se o kit foi aberto com outra conta de administrador, o certificado do usuario nao aparece aqui.)" -ForegroundColor DarkGray
     }
@@ -706,8 +803,7 @@ function Menu-Desinstalar {
         if ($alvo.Count -eq 0) { Write-Host "  Nenhum programa do kit instalado." -ForegroundColor DarkGray; Pausar; continue }
 
         Write-Host ""
-        Write-Host "   Vai remover: $(($alvo | ForEach-Object { $_.Nome }) -join ', ')" -ForegroundColor Yellow
-        if (-not (Perguntar-SN "Confirmar?")) { Write-Host "  Cancelado."; Pausar; continue }
+        Write-Host "   Removendo: $(($alvo | ForEach-Object { $_.Nome }) -join ', ')" -ForegroundColor Yellow
 
         $log = "$PastaTI\logs\desinstalar-$env:COMPUTERNAME-$(Get-Date -Format 'yyyyMMdd-HHmm').txt"
         Start-Transcript -Path $log | Out-Null
@@ -738,30 +834,23 @@ function Instalar-Windows {
     Start-Transcript -Path $log | Out-Null
     $resultado = New-Object System.Collections.ArrayList
 
+    # Comeca a baixar os instaladores do kit em segundo plano: quando chegar a vez
+    # deles, o arquivo ja esta pronto. (Instalar tem que ser um de cada vez: o Windows
+    # nao deixa dois instaladores .msi rodarem juntos.)
+    $paraBaixar = @($InstaladoresKit | Where-Object { -not (Test-Instalado $_.Busca) } | ForEach-Object { @{ Arquivo = $_.Arquivo; Sha256 = $_.Sha256 } })
+    Iniciar-DownloadsEmSegundoPlano ($paraBaixar + @($WebSignerXpi))
+
     Titulo "1/4 Programas pelo winget"
-    $temWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
+    $script:Winget = Encontrar-Winget
+    $temWinget = [bool]$script:Winget
     if (-not $temWinget) {
-        Write-Host "winget nao encontrado. Atualize o 'Instalador de Aplicativo' pela Microsoft Store e rode de novo." -ForegroundColor Yellow
+        Write-Host "winget nao encontrado (comum no Windows 10): vou baixar direto dos fabricantes." -ForegroundColor Yellow
     }
     foreach ($p in $ProgramasWinget) {
         if (Test-Instalado $p.Busca) { Write-Host "[ja instalado] $($p.Nome)" -ForegroundColor DarkGray; continue }
-        if ($temWinget) {
-            $parametros = @("install", "-e", "--id", $p.Id, "--silent", "--source", "winget",
-                            "--accept-package-agreements", "--accept-source-agreements")
-            if ($p.Versao) { $parametros += @("--version", $p.Versao) }
-            Write-Host "Instalando $($p.Nome) $($p.Versao)..."
-            & winget @parametros
-        }
-        # Plano B sem internet: arquivo do pendrive (conferido pela impressao digital)
-        if (-not (Test-Instalado $p.Busca) -and $p.Pendrive -and $PastaLocal) {
-            $local = Join-Path $PastaLocal $p.Pendrive.Arquivo
-            if (Hash-Confere $local $p.Pendrive.Sha256) {
-                Write-Host "  Instalando $($p.Nome) pelo arquivo do pendrive..."
-                [void](Executar-Instalador $local $p.Pendrive.Argumentos)
-            }
-        }
+        Instalar-ProgramaWinget $p $temWinget
         if (-not (Test-Instalado $p.Busca)) {
-            Write-Host "  Nao foi possivel instalar $($p.Nome). Confira a internet e se o winget esta atualizado." -ForegroundColor Yellow
+            Write-Host "  Nao foi possivel instalar $($p.Nome). Confira a internet e veja o log." -ForegroundColor Red
         }
     }
 
@@ -814,9 +903,116 @@ function Instalar-Windows {
         else       { Write-Host ("  [FALHOU] {0,-22} {1}" -f $r.Item, $r.Detalhe) -ForegroundColor Red }
     }
     Write-Host ""
+    Limpar-DownloadsPendentes
     Write-Host "Feche e abra os navegadores para a extensao aparecer." -ForegroundColor Cyan
     Write-Host "Log salvo em: $log"
     Stop-Transcript | Out-Null
+}
+
+# O winget e instalado POR USUARIO. Quando o kit roda com a conta do tecnico (o usuario
+# da maquina nao e administrador), o atalho "winget" pode nao existir para essa conta,
+# mesmo com o winget instalado. Entao procura o programa direto na pasta do Windows.
+function Encontrar-Winget {
+    $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $achados = @(Get-ChildItem "$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe\winget.exe" -ErrorAction SilentlyContinue)
+    if ($achados.Count -eq 0) { return $null }
+    $melhor = $achados | Sort-Object {
+        try { [version](($_.Directory.Name -split '_')[1]) } catch { [version]"0.0" }
+    } -Descending | Select-Object -First 1
+    return $melhor.FullName
+}
+
+# Downloads dos arquivos do kit (Release) em segundo plano, todos ao mesmo tempo.
+$script:DownloadsEmAndamento = @{}
+function Iniciar-DownloadsEmSegundoPlano($arquivos) {
+    if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) { return }
+    $nomes = @()
+    foreach ($a in $arquivos) {
+        if ($PastaLocal -and (Hash-Confere (Join-Path $PastaLocal $a.Arquivo) $a.Sha256)) { continue }
+        $destino = Join-Path "$PastaTI\instaladores" $a.Arquivo
+        if (Hash-Confere $destino $a.Sha256) { continue }
+        if ($script:DownloadsEmAndamento.ContainsKey($a.Arquivo)) { continue }
+        $parcial = "$destino.parcial"
+        Remove-Item $parcial -Force -ErrorAction SilentlyContinue
+        $proc = Start-Process curl.exe -WindowStyle Hidden -PassThru `
+            -ArgumentList "-sL --fail --retry 5 --retry-delay 3 -o `"$parcial`" `"$UrlArquivos/$($a.Arquivo)`""
+        $null = $proc.Handle
+        $script:DownloadsEmAndamento[$a.Arquivo] = @{ Proc = $proc; Parcial = $parcial; Destino = $destino }
+        $nomes += $a.Arquivo
+    }
+    if ($nomes) { Write-Host "Baixando em segundo plano: $($nomes -join ', ')" -ForegroundColor DarkGray }
+}
+
+# Se o arquivo estava sendo baixado em segundo plano, espera terminar e devolve o caminho
+function Aguardar-DownloadEmSegundoPlano($arquivo) {
+    $bg = $script:DownloadsEmAndamento[$arquivo]
+    if (-not $bg) { return $null }
+    if (-not $bg.Proc.HasExited) { Write-Host "  Esperando o download de $arquivo terminar..." }
+    $bg.Proc.WaitForExit()
+    $script:DownloadsEmAndamento.Remove($arquivo)
+    if (Test-Path $bg.Parcial) { Move-Item $bg.Parcial $bg.Destino -Force }
+    return $bg.Destino
+}
+
+# Ao terminar a instalacao: para downloads que sobraram (ex.: .xpi sem Firefox) e apaga o que ficou pela metade
+function Limpar-DownloadsPendentes {
+    foreach ($bg in @($script:DownloadsEmAndamento.Values)) {
+        if (-not $bg.Proc.HasExited) { Stop-Process -Id $bg.Proc.Id -Force -ErrorAction SilentlyContinue }
+        Remove-Item $bg.Parcial -Force -ErrorAction SilentlyContinue
+    }
+    $script:DownloadsEmAndamento = @{}
+}
+
+# winget primeiro; se nao tiver winget ou ele falhar, plano B (Reserva)
+function Instalar-ProgramaWinget($p, $temWinget) {
+    if ($temWinget) {
+        $base = @("install", "-e", "--id", $p.Id, "--silent", "--source", "winget",
+                  "--accept-package-agreements", "--accept-source-agreements")
+        if ($p.Versao) { $base += @("--version", $p.Versao) }
+        Write-Host "Instalando $($p.Nome) $($p.Versao)..."
+        $parametros = $base
+        if ($p.Escopo) { $parametros = $base + @("--scope", $p.Escopo) }
+        & $script:Winget @parametros
+        $codigo = $LASTEXITCODE
+        if (-not (Test-Instalado $p.Busca) -and $p.Escopo) {
+            # alguns pacotes nao tem instalador "para a maquina toda": tenta sem escolher
+            & $script:Winget @base
+            $codigo = $LASTEXITCODE
+        }
+        if (Test-Instalado $p.Busca) { return }
+        Write-Host "  O winget nao conseguiu instalar (codigo $codigo)." -ForegroundColor Yellow
+    }
+    if (-not $p.Reserva) { return }
+    $r = $p.Reserva
+    if ($r.Release) { $arquivo = Obter-Arquivo $r.Release $r.Sha256 }
+    else { $arquivo = Baixar-DoFabricante $r.Url $r.Arquivo $r.Assinante }
+    if (-not $arquivo) { return }
+    Write-Host "  Instalando $($p.Nome) pelo plano B..."
+    $codigoInst = Executar-Instalador $arquivo $r.Argumentos
+    if ($null -eq $codigoInst) { Write-Host "  O instalador passou de $MinutosLimite minutos sem terminar." -ForegroundColor Yellow }
+    elseif ($codigoInst -notin 0, 3010) { Write-Host "  Codigo de saida $codigoInst." -ForegroundColor Yellow }
+}
+
+# Baixa do site oficial do fabricante e SO devolve o arquivo se ele estiver assinado
+# digitalmente por esse fabricante (o arquivo muda a cada versao, entao nao da para
+# fixar a impressao digital; a assinatura e o que garante que e o original).
+function Baixar-DoFabricante($url, $arquivo, $assinante) {
+    $destino = Join-Path "$PastaTI\instaladores" $arquivo
+    Remove-Item $destino -Force -ErrorAction SilentlyContinue
+    Write-Host "  Baixando $arquivo do site do fabricante..."
+    if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+        & curl.exe -L --fail --retry 5 --retry-delay 3 -# -o $destino $url
+    } else {
+        try { Invoke-WebRequest -Uri $url -OutFile $destino -UseBasicParsing } catch { }
+    }
+    if (-not (Test-Path $destino)) { Write-Host "  Nao consegui baixar $arquivo." -ForegroundColor Red; return $null }
+    $assinatura = Get-AuthenticodeSignature $destino
+    if ($assinatura.Status -eq "Valid" -and $assinatura.SignerCertificate.Subject -like "*CN=$assinante*") { return $destino }
+    if ($assinatura.Status -eq "Valid" -and $assinatura.SignerCertificate.Subject -like "*CN=`"$assinante*") { return $destino }
+    Write-Host "  [BLOQUEADO] $arquivo nao esta assinado por $assinante (assinatura: $($assinatura.Status)). Nao vou instalar." -ForegroundColor Red
+    Remove-Item $destino -Force -ErrorAction SilentlyContinue
+    return $null
 }
 
 function Mostrar-ComandoMac {
@@ -871,6 +1067,11 @@ function Perguntar-SN($texto) {
 function Perfil-UsuarioTela {
     try {
         $u = (Get-CimInstance Win32_ComputerSystem).UserName
+        if (-not $u) {
+            # sem usuario "no console" (ex.: acesso remoto): usa o dono da area de trabalho
+            $dono = Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" | Select-Object -First 1 | Invoke-CimMethod -MethodName GetOwner
+            if ($dono.User) { $u = "$($dono.Domain)\$($dono.User)" }
+        }
         if ($u) {
             $sid = (New-Object Security.Principal.NTAccount($u)).Translate([Security.Principal.SecurityIdentifier]).Value
             $p = (Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sid }).LocalPath
@@ -1151,13 +1352,13 @@ $Correcoes = @(
         }
     },
     @{
-        Nome = "Remover extensoes forcadas"
-        Descricao = "Tira as politicas de extensao do Chrome, Edge e Firefox (a extensao volta a poder ser removida)."
+        Nome = "Excluir extensoes dos navegadores"
+        Descricao = "Exclui do Chrome, Edge e Firefox as extensoes forcadas (inclusive a Web Signer)."
         Acao = {
             Remove-Item "HKLM:\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist" -Recurse -ErrorAction SilentlyContinue
             Remove-Item "HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist" -Recurse -ErrorAction SilentlyContinue
             [void](Gravar-PoliticaFirefox $false $null)
-            Write-Host "  Politicas removidas. Feche e abra os navegadores." -ForegroundColor Green
+            Write-Host "  Pronto. Feche e abra os navegadores: as extensoes forcadas somem." -ForegroundColor Green
         }
     }
 )
@@ -1178,8 +1379,7 @@ function Menu-Correcoes {
         if ($op -eq "0") { return }
         $c = $Correcoes[[int]$op - 1]
         Titulo $c.Nome
-        $confirma = (Read-Host "   Confirmar? (S/N)").Trim().ToUpper()
-        if ($confirma -eq "S") { & $c.Acao } else { Write-Host "  Cancelado." }
+        & $c.Acao
         Pausar
     }
 }
