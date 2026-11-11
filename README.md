@@ -32,7 +32,8 @@ A primeira tela pergunta **qual computador você vai configurar** (Windows ou Ma
 |---|---|
 | Instalar programas | Instalar programas |
 | Correção de erros | Correção de erros |
-| Desinstalar programas | (ainda não tem) |
+| Desinstalar programas | Adicionar favoritos nos navegadores |
+| Adicionar favoritos nos navegadores | |
 
 Se você escolher o outro sistema (Mac num Windows, ou Windows num Mac), o kit mostra o comando para colar no outro computador.
 
@@ -52,6 +53,14 @@ Remove só os **programas do kit**: PJeOffice, SafeNet, SafeSign e Web Signer. O
 - Para só **liberar** a remoção (a extensão continua, mas o usuário pode tirar), use "Correção de erros › Liberar remocao da extensao Web Signer".
 - A cadeia de certificados ICP-Brasil **não** é removida: ela não atrapalha e é usada por outros programas e sites.
 - Log em `C:\ProgramData\TI\logs\desinstalar-...txt`.
+
+### Adicionar favoritos nos navegadores
+
+Adiciona os sites dos tribunais e ferramentas úteis (`e-SAJ Estadual`, `PJE 2.X Previdencia`, `PJE TRF5 Federal`, `PJE TRT19 1ºGrau`, `GERID`, `SEEU`, `CAA - AL`, `OAB - AL`, `WhatsAppWeb` e `iLOVE PDF`) direto na **Barra de favoritos** e já deixa a barra visível.
+
+- Permite escolher onde adicionar: **[1] Google Chrome**, **[2] Mozilla Firefox** ou **[3] Nos dois (Chrome e Firefox)**.
+- **Não apaga** os favoritos que a pessoa já tiver na máquina e não duplica se rodar mais de uma vez.
+- Para incluir ou tirar algum favorito no futuro, edite a lista `$Favoritos` (no `instalar.ps1`) e `FAVORITOS` (no `instalar.sh`).
 
 ## O que tem aqui
 

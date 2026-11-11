@@ -109,6 +109,21 @@ $ModulosToken = [ordered]@{
     "SafeSign" = "C:\Windows\System32\aetpkss1.dll"
 }
 
+# Favoritos adicionados na barra de favoritos do Chrome e do Firefox (menu "Adicionar favoritos").
+# Para incluir outro site, copie uma linha e troque Nome e Url.
+$Favoritos = @(
+    @{ Nome = "e-SAJ Estadual";                 Url = "https://www2.tjal.jus.br/esaj/portal.do?servico=190090" },
+    @{ Nome = "PJE 2.X Previdencia";            Url = "https://pje1g.trf5.jus.br/pje/login.seam" },
+    @{ Nome = "PJE TRF5 Federal";               Url = "https://pje.trf5.jus.br/pje/login.seam" },
+    @{ Nome = "PJE TRT19 1$([char]0x00BA)Grau"; Url = "https://pje.trt19.jus.br/primeirograu/login.seam" },
+    @{ Nome = "GERID";                          Url = "https://geridinss.dataprev.gov.br/cas/login?service=https%3A%2F%2Fgeridinss.dataprev.gov.br%2Fcas%2Foauth2.0%2FcallbackAuthorize%3Fclient_id%3DSAG%26redirect_uri%3Dhttps%253A%252F%252Fnovorequerimento.inss.gov.br%26response_type%3Dtoken%26client_name%3DCasOAuthClient" },
+    @{ Nome = "SEEU";                           Url = "https://seeu.pje.jus.br/seeu/" },
+    @{ Nome = "CAA - AL";                       Url = "https://www.caa-al.org.br/" },
+    @{ Nome = "OAB - AL";                       Url = "https://www.oab-al.org.br/" },
+    @{ Nome = "WhatsAppWeb";                    Url = "https://web.whatsapp.com/" },
+    @{ Nome = "iLOVE PDF";                      Url = "https://www.ilovepdf.com/pt" }
+)
+
 # ====================== FIM DA CONFIGURACAO ==========================
 
 
@@ -436,6 +451,39 @@ function Pasta-Firefox {
         Where-Object { Test-Path "$_\firefox.exe" } | Select-Object -First 1
 }
 
+# Garante que o Firefox ja tenha pasta de perfil criada, mesmo se acabou de ser instalado
+# e nunca foi aberto na maquina (evita ter que abrir a tela de introducao e rodar o kit 2 vezes).
+function Garantir-PerfilFirefox($perfil) {
+    $pastaFirefox = Pasta-Firefox
+    if (-not $pastaFirefox) { return @() }
+    $baseFx = "$perfil\AppData\Roaming\Mozilla\Firefox"
+    $perfisFx = @(Get-ChildItem "$baseFx\Profiles" -Directory -ErrorAction SilentlyContinue)
+    if ($perfisFx.Count -eq 0 -and $perfil -eq $env:USERPROFILE) {
+        try {
+            $proc = Start-Process "$pastaFirefox\firefox.exe" -ArgumentList "-headless" -WindowStyle Hidden -PassThru -ErrorAction Stop
+            for ($i = 0; $i -lt 16; $i++) {
+                Start-Sleep -Milliseconds 500
+                $perfisFx = @(Get-ChildItem "$baseFx\Profiles" -Directory -ErrorAction SilentlyContinue)
+                if ($perfisFx.Count -gt 0) { break }
+            }
+            if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+            Fechar-Navegadores
+        } catch { }
+    }
+    $perfisFx = @(Get-ChildItem "$baseFx\Profiles" -Directory -ErrorAction SilentlyContinue)
+    if ($perfisFx.Count -eq 0) {
+        $novoPerfil = "$baseFx\Profiles\padrao.default-release"
+        New-Item -ItemType Directory -Path $novoPerfil -Force | Out-Null
+        $utf8SemBom = New-Object Text.UTF8Encoding($false)
+        $installsIni = "[308046B0AF4A39CB]`r`nDefault=Profiles/padrao.default-release`r`nLocked=1`r`n`r`n[E7CF176E110C211B]`r`nDefault=Profiles/padrao.default-release`r`nLocked=1`r`n"
+        $profilesIni = "[Install308046B0AF4A39CB]`r`nDefault=Profiles/padrao.default-release`r`nLocked=1`r`n`r`n[InstallE7CF176E110C211B]`r`nDefault=Profiles/padrao.default-release`r`nLocked=1`r`n`r`n[Profile0]`r`nName=default-release`r`nIsRelative=1`r`nPath=Profiles/padrao.default-release`r`nDefault=1`r`n`r`n[General]`r`nStartWithLastProfile=1`r`nVersion=2`r`n"
+        [IO.File]::WriteAllText("$baseFx\installs.ini", $installsIni, $utf8SemBom)
+        [IO.File]::WriteAllText("$baseFx\profiles.ini", $profilesIni, $utf8SemBom)
+        $perfisFx = @(Get-Item $novoPerfil)
+    }
+    return $perfisFx
+}
+
 # Ativa automaticamente os toggles internos da extensao Web Signer:
 #   - Cripto Dispositivos (PKCS #11): Tokens SafeNet, Dispositivos SafeSign AET, Smartcards Athena IDProtect
 #   - Avancadas: Habilitar logs detalhados (trace = true)
@@ -481,13 +529,22 @@ function Configurar-TogglesWebSigner {
     # Sem keepStorageOnUninstall=true, no primeiro ADDON_INSTALL o Firefox marca a extensao
     # como ja migrada antes de abrir o storage.js (Extension.sys.mjs) e ignora o arquivo.
     $jsonFx = '{"pkcs11":["eTPKCS11.dll","aetpkss1.dll","asepkcs.dll"],"trace":true}'
-    $perfisFx = @(Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue)
-    if ((Pasta-Firefox) -and $perfisFx.Count -eq 0) {
-        Write-Host "Firefox ainda sem perfil: abra o Firefox uma vez, feche e rode 'Instalar programas' de novo para ativar os toggles nele." -ForegroundColor Yellow
-    }
+    $pastaFirefox = Pasta-Firefox
+    $perfisFx = @(Garantir-PerfilFirefox $perfil)
+    $prefsExtrasFx = @(
+        'user_pref("extensions.webextensions.keepStorageOnUninstall", true);',
+        'user_pref("browser.aboutwelcome.enabled", false);',
+        'user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);',
+        'user_pref("termsofuse.acceptedVersion", 999);',
+        'user_pref("termsofuse.acceptedDate", "1740000000000");'
+    )
+    $regexLimparFx = 'ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall|browser\.aboutwelcome\.enabled|datareporting\.policy\.dataSubmissionPolicyBypassNotification|termsofuse\.accepted'
+
     foreach ($d in $perfisFx) {
         $dirExt = Join-Path $d.FullName "browser-extension-data\$WebSignerFirefoxId"
-        if (Get-ChildItem $dirExt -Filter "storage.js*.migrated" -File -ErrorAction SilentlyContinue) { continue }
+        $arqXpiPerfil = Join-Path $d.FullName "extensions\$WebSignerFirefoxId.xpi"
+        $jaMigrado = [bool](Get-ChildItem $dirExt -Filter "storage.js*.migrated" -File -ErrorAction SilentlyContinue)
+        if ($jaMigrado -and (Test-Path $arqXpiPerfil)) { continue }
 
         $prefs = Join-Path $d.FullName "prefs.js"
         if (Test-Path $prefs) {
@@ -497,25 +554,37 @@ function Configurar-TogglesWebSigner {
                 Get-ChildItem "$($d.FullName)\storage\default" -Filter "moz-extension+++$uuidFx*" -Directory -ErrorAction SilentlyContinue |
                     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
             }
-            $linhasPrefs = @(Get-Content $prefs | Where-Object {
-                $_ -notmatch 'ExtensionStorageIDB\.migrated\.websigner@softplan_com_br' -and
-                $_ -notmatch 'extensions\.webextensions\.keepStorageOnUninstall'
-            })
-            $linhasPrefs += 'user_pref("extensions.webextensions.keepStorageOnUninstall", true);'
+            $linhasPrefs = @(Get-Content $prefs | Where-Object { $_ -notmatch $regexLimparFx })
+            $linhasPrefs += $prefsExtrasFx
             [IO.File]::WriteAllLines($prefs, ($linhasPrefs -as [string[]]))
         }
         $userJs = Join-Path $d.FullName "user.js"
         $linhasUser = @()
         if (Test-Path $userJs) {
-            $linhasUser = @(Get-Content $userJs | Where-Object {
-                $_ -notmatch 'ExtensionStorageIDB\.migrated\.websigner@softplan_com_br' -and
-                $_ -notmatch 'extensions\.webextensions\.keepStorageOnUninstall'
-            })
+            $linhasUser = @(Get-Content $userJs | Where-Object { $_ -notmatch $regexLimparFx })
         }
-        $linhasUser += 'user_pref("extensions.webextensions.keepStorageOnUninstall", true);'
+        $linhasUser += $prefsExtrasFx
         [IO.File]::WriteAllLines($userJs, ($linhasUser -as [string[]]))
         New-Item -ItemType Directory -Path $dirExt -Force | Out-Null
+        Remove-Item "$dirExt\storage.js*" -Force -ErrorAction SilentlyContinue
         [IO.File]::WriteAllText("$dirExt\storage.js", $jsonFx)
+
+        # Inicializa o Firefox em modo invisivel (-headless) para ja instalar o websigner.xpi
+        # e migrar o storage.js na primeira instalacao, sem precisar abrir a tela de introducao.
+        if ($pastaFirefox -and (Test-Path "$PastaTI\websigner.xpi")) {
+            try {
+                $procFx = Start-Process "$pastaFirefox\firefox.exe" -ArgumentList "-headless -no-remote -profile `"$($d.FullName)`"" -WindowStyle Hidden -PassThru -ErrorAction Stop
+                for ($i = 0; $i -lt 24; $i++) {
+                    Start-Sleep -Milliseconds 500
+                    $temXpi = Test-Path $arqXpiPerfil
+                    $temMig = [bool](Get-ChildItem $dirExt -Filter "storage.js*.migrated" -File -ErrorAction SilentlyContinue)
+                    if ($temXpi -and $temMig) { break }
+                }
+                if (-not $procFx.HasExited) { Stop-Process -Id $procFx.Id -Force -ErrorAction SilentlyContinue }
+                Start-Sleep -Milliseconds 500
+                Remove-Item "$($d.FullName)\parent.lock" -Force -ErrorAction SilentlyContinue
+            } catch { }
+        }
     }
 
     Write-Host "Web Signer: toggles (SafeNet, SafeSign, Athena e logs detalhados) ativados."
@@ -545,14 +614,15 @@ function Aplicar-ExtensaoWebSigner {
     Configurar-TogglesWebSigner
 }
 
-# Escreve o policies.json do Firefox com as duas partes do kit:
+# Escreve o policies.json do Firefox com as partes do kit:
 #   extensao     = Web Signer forcada
 #   certificados = usar os certificados do Windows + carregar os modulos dos tokens
+#   favoritos    = sites dos tribunais na barra de favoritos
 # Cada parametro: $true (liga), $false (desliga) ou $null (mantem como esta).
 # A extensao aceita tambem "bloqueada": o Firefox remove a extensao e nao deixa reinstalar
 # (usado ao desinstalar o Web Signer; instalar de novo pelo kit volta para forcada).
 # Assim uma parte nao apaga a outra. Devolve $false se nao houver Firefox.
-function Gravar-PoliticaFirefox($extensao, $certificados) {
+function Gravar-PoliticaFirefox($extensao, $certificados, $favoritos = $null) {
     $pastaFirefox = Pasta-Firefox
     if (-not $pastaFirefox) { return $false }
     $dist = Join-Path $pastaFirefox "distribution"
@@ -564,6 +634,7 @@ function Gravar-PoliticaFirefox($extensao, $certificados) {
         else { $extensao = $false }
     }
     if ($null -eq $certificados) { $certificados = $atual -like "*ImportEnterpriseRoots*" }
+    if ($null -eq $favoritos) { $favoritos = $atual -like '*"Bookmarks"*' }
 
     $pol = @{}
     # cuidado: no PowerShell "$true -eq 'texto'" da verdadeiro, por isso confere o tipo
@@ -572,7 +643,11 @@ function Gravar-PoliticaFirefox($extensao, $certificados) {
     } elseif ($extensao -is [bool] -and $extensao) {
         $urlXpi = "file:///" + ("$PastaTI\websigner.xpi" -replace '\\', '/')
         $pol.ExtensionSettings = @{ $WebSignerFirefoxId = @{ installation_mode = "force_installed"; install_url = $urlXpi } }
-        $pol.Preferences = @{ "extensions.webextensions.keepStorageOnUninstall" = @{ Value = $true; Status = "default" } }
+        $pol.Preferences = @{
+            "extensions.webextensions.keepStorageOnUninstall" = @{ Value = $true; Status = "default" }
+            "browser.aboutwelcome.enabled" = @{ Value = $false; Status = "default" }
+            "datareporting.policy.dataSubmissionPolicyBypassNotification" = @{ Value = $true; Status = "default" }
+        }
     }
     if ($certificados) {
         $pol.Certificates = @{ ImportEnterpriseRoots = $true }
@@ -580,15 +655,35 @@ function Gravar-PoliticaFirefox($extensao, $certificados) {
         foreach ($nome in $ModulosToken.Keys) { if (Test-Path $ModulosToken[$nome]) { $modulos[$nome] = $ModulosToken[$nome] } }
         if ($modulos.Count) { $pol.SecurityDevices = @{ Add = $modulos } }
     }
+    if ($favoritos) {
+        $pol.DisplayBookmarksToolbar = "always"
+        $pol.Bookmarks = @($Favoritos | ForEach-Object {
+            @{ Title = $_.Nome; URL = $_.Url; Placement = "toolbar" }
+        })
+    }
     if ($pol.Count -eq 0) {
         Remove-Item $arqPol -Force -ErrorAction SilentlyContinue
         return $true
+    }
+    # Pula a tela de introducao e o aviso de termos de uso na primeira abertura do Firefox
+    $pol.SkipTermsOfUse = $true
+    $pol.OverrideFirstRunPage = ""
+    $pol.OverridePostUpdatePage = ""
+    $pol.DontCheckDefaultBrowser = $true
+    $pol.UserMessaging = @{
+        WhatsNew = $false
+        ExtensionRecommendations = $false
+        FeatureRecommendations = $false
+        UrlbarInterventions = $false
+        SkipOnboarding = $true
+        MoreFromMozilla = $false
     }
     New-Item -ItemType Directory -Path $dist -Force | Out-Null
     # guarda o arquivo original (de antes do kit) uma vez so
     if ((Test-Path $arqPol) -and -not (Test-Path "$arqPol.bak")) { Copy-Item $arqPol "$arqPol.bak" -Force }
     # UTF-8 sem BOM (o Firefox exige)
-    [IO.File]::WriteAllText($arqPol, (@{ policies = $pol } | ConvertTo-Json -Depth 10))
+    $utf8SemBom = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($arqPol, (@{ policies = $pol } | ConvertTo-Json -Depth 10), $utf8SemBom)
     return $true
 }
 
@@ -1083,14 +1178,189 @@ function Menu-Windows {
         Write-Host "   [1] Instalar programas"
         Write-Host "   [2] Correcao de erros"
         Write-Host "   [3] Desinstalar programas"
+        Write-Host "   [4] Adicionar favoritos nos navegadores"
         Write-Host "   [0] Voltar"
         Write-Host ""
-        switch (Ler-Opcao @("1", "2", "3", "0")) {
+        switch (Ler-Opcao @("1", "2", "3", "4", "0")) {
             "1" { Instalar-Windows; $script:CacheToken = $null; Pausar }
             "2" { Menu-Correcoes }
             "3" { Menu-Desinstalar; $script:CacheToken = $null }
+            "4" { Menu-Favoritos }
             "0" { return }
         }
+    }
+}
+
+# ===================== FAVORITOS NOS NAVEGADORES =====================
+
+function Adicionar-FavoritosChrome {
+    $perfil = Perfil-UsuarioTela
+    $baseChrome = "$perfil\AppData\Local\Google\Chrome\User Data"
+    $exeChrome = @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe", "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe", "$perfil\AppData\Local\Google\Chrome\Application\chrome.exe") |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $exeChrome -and -not (Test-Path $baseChrome)) {
+        Write-Host "  Google Chrome nao encontrado nesta maquina." -ForegroundColor Yellow
+        return
+    }
+    $perfisCr = @()
+    if (Test-Path $baseChrome) {
+        $perfisCr = @(Get-ChildItem $baseChrome -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq "Default" -or $_.Name -like "Profile *" -or (Test-Path "$($_.FullName)\Preferences") -or (Test-Path "$($_.FullName)\Bookmarks") } |
+            ForEach-Object { $_.FullName })
+    }
+    if ($perfisCr.Count -eq 0) { $perfisCr = @("$baseChrome\Default") }
+
+    $utf8SemBom = New-Object Text.UTF8Encoding($false)
+    $agoraCr = [string]([int64](([DateTime]::UtcNow - [DateTime]::new(1601, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)).TotalMilliseconds * 1000))
+
+    foreach ($p in ($perfisCr | Select-Object -Unique)) {
+        New-Item -ItemType Directory -Path $p -Force | Out-Null
+        $arqFav = Join-Path $p "Bookmarks"
+        $dados = $null
+        if (Test-Path $arqFav) {
+            try { $dados = [IO.File]::ReadAllText($arqFav, [Text.Encoding]::UTF8) | ConvertFrom-Json } catch { $dados = $null }
+        }
+        if (-not $dados -or -not $dados.roots -or -not $dados.roots.bookmark_bar) {
+            $dados = [pscustomobject]@{
+                roots = [pscustomobject]@{
+                    bookmark_bar = [pscustomobject]@{
+                        children = @()
+                        date_added = $agoraCr
+                        date_last_used = "0"
+                        date_modified = $agoraCr
+                        guid = "0bc5d13f-2cba-5d74-951f-3f233fe6c908"
+                        id = "1"
+                        name = "Barra de favoritos"
+                        type = "folder"
+                    }
+                    other = [pscustomobject]@{
+                        children = @()
+                        date_added = $agoraCr
+                        date_last_used = "0"
+                        date_modified = "0"
+                        guid = "82b081ec-3dd3-529c-8475-ab6c344590dd"
+                        id = "2"
+                        name = "Outros favoritos"
+                        type = "folder"
+                    }
+                    synced = [pscustomobject]@{
+                        children = @()
+                        date_added = $agoraCr
+                        date_last_used = "0"
+                        date_modified = "0"
+                        guid = "4cf2e351-0e85-532b-bb37-df045d8f8d0f"
+                        id = "3"
+                        name = "Dispositivos moveis"
+                        type = "folder"
+                    }
+                }
+                version = 1
+            }
+        }
+
+        $textoAtual = ($dados | ConvertTo-Json -Depth 20 -Compress)
+        $maxId = 10
+        foreach ($m in [regex]::Matches($textoAtual, '"id"\s*:\s*"(\d+)"')) {
+            $v = [int]$m.Groups[1].Value
+            if ($v -gt $maxId) { $maxId = $v }
+        }
+
+        $atuais = @($dados.roots.bookmark_bar.children)
+        $urlsExistentes = @($atuais | Where-Object { $_.url } | ForEach-Object { $_.url })
+        $novos = 0
+        foreach ($f in $Favoritos) {
+            if ($urlsExistentes -contains $f.Url) { continue }
+            $maxId++
+            $atuais += [pscustomobject]@{
+                date_added = $agoraCr
+                date_last_used = "0"
+                guid = [guid]::NewGuid().ToString()
+                id = "$maxId"
+                name = $f.Nome
+                type = "url"
+                url = $f.Url
+            }
+            $novos++
+        }
+        $dados.roots.bookmark_bar.children = $atuais
+        $dados.roots.bookmark_bar.date_modified = $agoraCr
+        if ($dados.PSObject.Properties["checksum"]) { [void]$dados.PSObject.Properties.Remove("checksum") }
+        Remove-Item "$arqFav.bak" -Force -ErrorAction SilentlyContinue
+        [IO.File]::WriteAllText($arqFav, ($dados | ConvertTo-Json -Depth 20), $utf8SemBom)
+
+        # Mostra a barra de favoritos em todas as abas
+        $arqPref = Join-Path $p "Preferences"
+        if (Test-Path $arqPref) {
+            $rawPref = [IO.File]::ReadAllText($arqPref, [Text.Encoding]::UTF8)
+            if ($rawPref -match '"bookmark_bar"\s*:\s*\{') {
+                if ($rawPref -match '"show_on_all_tabs"\s*:\s*(true|false)') {
+                    $rawPref = [regex]::Replace($rawPref, '"show_on_all_tabs"\s*:\s*false', '"show_on_all_tabs":true')
+                } else {
+                    $rawPref = [regex]::Replace($rawPref, '"bookmark_bar"\s*:\s*\{', '"bookmark_bar":{"show_on_all_tabs":true,')
+                }
+            } elseif ($rawPref -match '^\s*\{\s*\}') {
+                $rawPref = '{"bookmark_bar":{"show_on_all_tabs":true}}'
+            } else {
+                $rawPref = [regex]::Replace($rawPref, '^\s*\{', '{"bookmark_bar":{"show_on_all_tabs":true},')
+            }
+            [IO.File]::WriteAllText($arqPref, $rawPref, $utf8SemBom)
+        } else {
+            [IO.File]::WriteAllText($arqPref, '{"bookmark_bar":{"show_on_all_tabs":true}}', $utf8SemBom)
+        }
+
+        Write-Host ("  [OK] Chrome ({0}): {1} favoritos adicionados na barra de favoritos ({2} no total)." -f (Split-Path $p -Leaf), $novos, $Favoritos.Count) -ForegroundColor Green
+    }
+}
+
+function Adicionar-FavoritosFirefox {
+    if (-not (Pasta-Firefox)) {
+        Write-Host "  Mozilla Firefox nao encontrado nesta maquina." -ForegroundColor Yellow
+        return
+    }
+    [void](Gravar-PoliticaFirefox $null $null $true)
+    $perfil = Perfil-UsuarioTela
+    $perfisFx = @(Garantir-PerfilFirefox $perfil)
+    foreach ($d in $perfisFx) {
+        foreach ($nomeArq in "prefs.js", "user.js") {
+            $arq = Join-Path $d.FullName $nomeArq
+            if ($nomeArq -eq "prefs.js" -and -not (Test-Path $arq)) { continue }
+            $linhas = @()
+            if (Test-Path $arq) {
+                $linhas = @(Get-Content $arq | Where-Object { $_ -notmatch 'browser\.toolbars\.bookmarks\.visibility' })
+            }
+            $linhas += 'user_pref("browser.toolbars.bookmarks.visibility", "always");'
+            [IO.File]::WriteAllLines($arq, ($linhas -as [string[]]))
+        }
+    }
+    Write-Host ("  [OK] Firefox: {0} favoritos adicionados na barra de favoritos." -f $Favoritos.Count) -ForegroundColor Green
+}
+
+function Menu-Favoritos {
+    while ($true) {
+        Mostrar-Cabecalho
+        Write-Host "   ADICIONAR FAVORITOS DOS TRIBUNAIS" -ForegroundColor Cyan
+        Write-Host "   Adiciona na barra de favoritos sem apagar os favoritos que ja existem:" -ForegroundColor DarkGray
+        Write-Host "   $(($Favoritos | ForEach-Object { $_.Nome }) -join ', ')" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "   Em qual navegador voce quer adicionar os favoritos?"
+        Write-Host ""
+        Write-Host "   [1] Google Chrome"
+        Write-Host "   [2] Mozilla Firefox"
+        Write-Host "   [3] Nos dois (Chrome e Firefox)"
+        Write-Host "   [0] Voltar"
+        Write-Host ""
+        $op = Ler-Opcao @("1", "2", "3", "0")
+        if ($op -eq "0") { return }
+        Fechar-Navegadores
+        if ($op -in "1", "3") {
+            Titulo "Google Chrome"
+            Adicionar-FavoritosChrome
+        }
+        if ($op -in "2", "3") {
+            Titulo "Mozilla Firefox"
+            Adicionar-FavoritosFirefox
+        }
+        Pausar
     }
 }
 

@@ -80,6 +80,21 @@ TIPOS_TOKEN=(
   "epass|feitian;Feitian ePass;;"
 )
 
+# Favoritos adicionados na barra de favoritos do Chrome e do Firefox (menu "Adicionar favoritos").
+# Formato: Nome|Url
+FAVORITOS=(
+  "e-SAJ Estadual|https://www2.tjal.jus.br/esaj/portal.do?servico=190090"
+  "PJE 2.X Previdencia|https://pje1g.trf5.jus.br/pje/login.seam"
+  "PJE TRF5 Federal|https://pje.trf5.jus.br/pje/login.seam"
+  "PJE TRT19 1ºGrau|https://pje.trt19.jus.br/primeirograu/login.seam"
+  "GERID|https://geridinss.dataprev.gov.br/cas/login?service=https%3A%2F%2Fgeridinss.dataprev.gov.br%2Fcas%2Foauth2.0%2FcallbackAuthorize%3Fclient_id%3DSAG%26redirect_uri%3Dhttps%253A%252F%252Fnovorequerimento.inss.gov.br%26response_type%3Dtoken%26client_name%3DCasOAuthClient"
+  "SEEU|https://seeu.pje.jus.br/seeu/"
+  "CAA - AL|https://www.caa-al.org.br/"
+  "OAB - AL|https://www.oab-al.org.br/"
+  "WhatsAppWeb|https://web.whatsapp.com/"
+  "iLOVE PDF|https://www.ilovepdf.com/pt"
+)
+
 # ====================== FIM DA CONFIGURACAO ==========================
 
 
@@ -273,6 +288,87 @@ instalar_arquivo() {
 DIR_EXT_CHROME="/Library/Application Support/Google/Chrome/External Extensions"
 FX="/Applications/Firefox.app"
 
+# Garante que o Firefox ja tenha pasta de perfil criada, mesmo se acabou de ser instalado
+garantir_perfil_firefox() {
+  [ -d "$FX" ] || return 0
+  local home_u="/Users/$USUARIO_TELA"
+  local base_fx="$home_u/Library/Application Support/Firefox/Profiles"
+  if ! ls "$base_fx"/* >/dev/null 2>&1; then
+    launchctl asuser "$(id -u "$USUARIO_TELA")" sudo -u "$USUARIO_TELA" "$FX/Contents/MacOS/firefox" -headless >/dev/null 2>&1 &
+    local pid_fx=$! i
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+      sleep 0.5
+      ls "$base_fx"/* >/dev/null 2>&1 && break
+    done
+    kill "$pid_fx" 2>/dev/null; pkill -x firefox 2>/dev/null; sleep 1
+  fi
+}
+
+# Escreve o policies.json do Firefox preservando extensao e favoritos
+# Parametros: extensao ("true"|"false"|"manter") favoritos ("true"|"false"|"manter")
+gravar_politica_firefox() {
+  [ -d "$FX" ] || return 1
+  local ext="${1:-manter}" fav="${2:-manter}"
+  local dist="$FX/Contents/Resources/distribution"
+  local arq="$dist/policies.json"
+  if [ "$ext" = "manter" ]; then
+    if grep -q "$WEBSIGNER_FIREFOX_ID" "$arq" 2>/dev/null; then ext="true"; else ext="false"; fi
+  fi
+  if [ "$fav" = "manter" ]; then
+    if grep -q '"Bookmarks"' "$arq" 2>/dev/null; then fav="true"; else fav="false"; fi
+  fi
+  if [ "$ext" = "false" ] && [ "$fav" = "false" ]; then
+    rm -f "$arq"
+    return 0
+  fi
+  mkdir -p "$dist"
+  [ -f "$arq" ] && [ ! -f "$arq.bak" ] && cp -f "$arq" "$arq.bak"
+  {
+    printf '{\n  "policies": {\n'
+    printf '    "SkipTermsOfUse": true,\n'
+    printf '    "OverrideFirstRunPage": "",\n'
+    printf '    "OverridePostUpdatePage": "",\n'
+    printf '    "DontCheckDefaultBrowser": true,\n'
+    printf '    "UserMessaging": {\n'
+    printf '      "WhatsNew": false,\n'
+    printf '      "ExtensionRecommendations": false,\n'
+    printf '      "FeatureRecommendations": false,\n'
+    printf '      "UrlbarInterventions": false,\n'
+    printf '      "SkipOnboarding": true,\n'
+    printf '      "MoreFromMozilla": false\n'
+    printf '    },\n'
+    printf '    "Preferences": {\n'
+    printf '      "extensions.webextensions.keepStorageOnUninstall": { "Value": true, "Status": "default" },\n'
+    printf '      "browser.aboutwelcome.enabled": { "Value": false, "Status": "default" },\n'
+    printf '      "datareporting.policy.dataSubmissionPolicyBypassNotification": { "Value": true, "Status": "default" }\n'
+    printf '    }'
+    if [ "$ext" = "true" ]; then
+      printf ',\n    "ExtensionSettings": {\n'
+      printf '      "%s": {\n' "$WEBSIGNER_FIREFOX_ID"
+      printf '        "installation_mode": "force_installed",\n'
+      printf '        "install_url": "file://%s/websigner.xpi"\n' "$PASTA_TI"
+      printf '      }\n    }'
+    fi
+    if [ "$fav" = "true" ]; then
+      printf ',\n    "DisplayBookmarksToolbar": "always",\n'
+      printf '    "Bookmarks": [\n'
+      local idx=0 total="${#FAVORITOS[@]}" linha nome url
+      for linha in "${FAVORITOS[@]}"; do
+        idx=$((idx + 1))
+        IFS='|' read -r nome url <<< "$linha"
+        if [ "$idx" -lt "$total" ]; then
+          printf '      { "Title": "%s", "URL": "%s", "Placement": "toolbar" },\n' "$nome" "$url"
+        else
+          printf '      { "Title": "%s", "URL": "%s", "Placement": "toolbar" }\n' "$nome" "$url"
+        fi
+      done
+      printf '    ]'
+    fi
+    printf '\n  }\n}\n'
+  } > "$arq"
+  return 0
+}
+
 # Ativa automaticamente os toggles internos da extensao Web Signer:
 #   - Cripto Dispositivos (PKCS #11): Tokens SafeNet, Dispositivos SafeSign AET
 #   - Avancadas: Habilitar logs detalhados (trace = true)
@@ -301,30 +397,62 @@ configurar_toggles_websigner() {
   done
   chown -R "$USUARIO_TELA" "$base_cr" 2>/dev/null
 
+  garantir_perfil_firefox
   if [ -d "$base_fx" ]; then
+    local regex_limpar='ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall|browser\.aboutwelcome\.enabled|datareporting\.policy\.dataSubmissionPolicyBypassNotification|termsofuse\.accepted'
     for p in "$base_fx"/*; do
       [ -d "$p" ] || continue
-      ls "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*.migrated >/dev/null 2>&1 && continue
+      if ls "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*.migrated >/dev/null 2>&1 && \
+         [ -f "$p/extensions/$WEBSIGNER_FIREFOX_ID.xpi" ]; then
+        continue
+      fi
       if [ -f "$p/prefs.js" ]; then
         local uuid_fx
         uuid_fx="$(sed -n 's/.*"websigner@softplan_com_br"[[:space:]]*:[[:space:]]*\\*"\([0-9a-fA-F-]*\)\\*".*/\1/p' "$p/prefs.js" | head -1)"
         [ -n "$uuid_fx" ] && rm -rf "$p/storage/default/moz-extension+++$uuid_fx"*
-        grep -vE 'ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall' "$p/prefs.js" > "$p/prefs.js.tmp"
-        printf 'user_pref("extensions.webextensions.keepStorageOnUninstall", true);\n' >> "$p/prefs.js.tmp"
+        grep -vE "$regex_limpar" "$p/prefs.js" > "$p/prefs.js.tmp"
+        {
+          printf 'user_pref("extensions.webextensions.keepStorageOnUninstall", true);\n'
+          printf 'user_pref("browser.aboutwelcome.enabled", false);\n'
+          printf 'user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);\n'
+          printf 'user_pref("termsofuse.acceptedVersion", 999);\n'
+          printf 'user_pref("termsofuse.acceptedDate", "1740000000000");\n'
+        } >> "$p/prefs.js.tmp"
         mv -f "$p/prefs.js.tmp" "$p/prefs.js"
         chown "$USUARIO_TELA" "$p/prefs.js" 2>/dev/null
       fi
       if [ -f "$p/user.js" ]; then
-        grep -vE 'ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall' "$p/user.js" > "$p/user.js.tmp"
+        grep -vE "$regex_limpar" "$p/user.js" > "$p/user.js.tmp"
       else
         : > "$p/user.js.tmp"
       fi
-      printf 'user_pref("extensions.webextensions.keepStorageOnUninstall", true);\n' >> "$p/user.js.tmp"
+      {
+        printf 'user_pref("extensions.webextensions.keepStorageOnUninstall", true);\n'
+        printf 'user_pref("browser.aboutwelcome.enabled", false);\n'
+        printf 'user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);\n'
+        printf 'user_pref("termsofuse.acceptedVersion", 999);\n'
+        printf 'user_pref("termsofuse.acceptedDate", "1740000000000");\n'
+      } >> "$p/user.js.tmp"
       mv -f "$p/user.js.tmp" "$p/user.js"
       chown "$USUARIO_TELA" "$p/user.js" 2>/dev/null
       mkdir -p "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"
+      rm -f "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*
       printf '{"pkcs11":["libeToken.dylib","libaetpkss.dylib"],"trace":true}\n' > "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID/storage.js"
       chown -R "$USUARIO_TELA" "$p/browser-extension-data" 2>/dev/null
+
+      if [ -d "$FX" ] && [ -f "$PASTA_TI/websigner.xpi" ]; then
+        launchctl asuser "$(id -u "$USUARIO_TELA")" sudo -u "$USUARIO_TELA" "$FX/Contents/MacOS/firefox" -headless -no-remote -profile "$p" >/dev/null 2>&1 &
+        local pid_p=$! j
+        for j in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
+          sleep 0.5
+          if [ -f "$p/extensions/$WEBSIGNER_FIREFOX_ID.xpi" ] && \
+             ls "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*.migrated >/dev/null 2>&1; then
+            break
+          fi
+        done
+        kill "$pid_p" 2>/dev/null; pkill -x firefox 2>/dev/null; sleep 0.5
+        rm -f "$p/parent.lock" "$p/.parentlock"
+      fi
     done
   fi
   echo "Web Signer: toggles (SafeNet, SafeSign e logs detalhados) ativados."
@@ -346,27 +474,7 @@ aplicar_extensao() {
     xpi="$(obter_arquivo "$xpi_arq" "$xpi_sha")"
     if [ -n "$xpi" ]; then
       cp -f "$xpi" "$PASTA_TI/websigner.xpi" && chmod 644 "$PASTA_TI/websigner.xpi"
-      local DIST="$FX/Contents/Resources/distribution"
-      mkdir -p "$DIST"
-      [ -f "$DIST/policies.json" ] && cp -f "$DIST/policies.json" "$DIST/policies.json.bak"
-      cat > "$DIST/policies.json" <<JSON
-{
-  "policies": {
-    "ExtensionSettings": {
-      "$WEBSIGNER_FIREFOX_ID": {
-        "installation_mode": "force_installed",
-        "install_url": "file://$PASTA_TI/websigner.xpi"
-      }
-    },
-    "Preferences": {
-      "extensions.webextensions.keepStorageOnUninstall": {
-        "Value": true,
-        "Status": "default"
-      }
-    }
-  }
-}
-JSON
+      gravar_politica_firefox "true" "manter"
       echo "Firefox: extensao forcada."
     fi
   fi
@@ -477,12 +585,199 @@ menu_mac() {
     echo "${CIANO}   MAC${FIM}"; echo
     echo "   [1] Instalar programas"
     echo "   [2] Correcao de erros"
+    echo "   [3] Adicionar favoritos nos navegadores"
     echo "   [0] Voltar"; echo
-    case "$(ler_opcao 1 2 0)" in
+    case "$(ler_opcao 1 2 3 0)" in
       1) instalar_com_log; pausar ;;
       2) menu_correcoes ;;
+      3) menu_favoritos ;;
       0) return ;;
     esac
+  done
+}
+
+
+# ===================== FAVORITOS NOS NAVEGADORES =====================
+
+adicionar_favoritos_chrome() {
+  local home_u="/Users/$USUARIO_TELA"
+  local base_cr="$home_u/Library/Application Support/Google/Chrome"
+  if [ ! -d "/Applications/Google Chrome.app" ] && [ ! -d "$base_cr" ]; then
+    aviso "  Google Chrome nao encontrado neste Mac."
+    return
+  fi
+  mkdir -p "$base_cr/Default"
+  local p arq_fav arq_pref
+  for p in "$base_cr"/Default "$base_cr"/Profile\ *; do
+    [ -d "$p" ] || continue
+    arq_fav="$p/Bookmarks"
+    arq_pref="$p/Preferences"
+    rm -f "$arq_fav.bak"
+    /usr/bin/python3 - "$arq_fav" "$arq_pref" "${FAVORITOS[@]}" <<'PY'
+import json, os, sys, time, uuid
+
+arq_fav, arq_pref = sys.argv[1], sys.argv[2]
+itens = [x.split("|", 1) for x in sys.argv[3:] if "|" in x]
+agora = str(int((time.time() + 11644473600) * 1000000))
+
+dados = None
+if os.path.exists(arq_fav):
+    try:
+        with open(arq_fav, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+    except Exception:
+        dados = None
+
+if not isinstance(dados, dict) or "roots" not in dados or "bookmark_bar" not in dados.get("roots", {}):
+    dados = {
+        "roots": {
+            "bookmark_bar": {
+                "children": [],
+                "date_added": agora,
+                "date_last_used": "0",
+                "date_modified": agora,
+                "guid": "0bc5d13f-2cba-5d74-951f-3f233fe6c908",
+                "id": "1",
+                "name": "Barra de favoritos",
+                "type": "folder"
+            },
+            "other": {
+                "children": [],
+                "date_added": agora,
+                "date_last_used": "0",
+                "date_modified": "0",
+                "guid": "82b081ec-3dd3-529c-8475-ab6c344590dd",
+                "id": "2",
+                "name": "Outros favoritos",
+                "type": "folder"
+            },
+            "synced": {
+                "children": [],
+                "date_added": agora,
+                "date_last_used": "0",
+                "date_modified": "0",
+                "guid": "4cf2e351-0e85-532b-bb37-df045d8f8d0f",
+                "id": "3",
+                "name": "Dispositivos moveis",
+                "type": "folder"
+            }
+        },
+        "version": 1
+    }
+
+def achar_max_id(obj):
+    m = 10
+    if isinstance(obj, dict):
+        if "id" in obj and str(obj["id"]).isdigit():
+            m = max(m, int(obj["id"]))
+        for v in obj.values():
+            m = max(m, achar_max_id(v))
+    elif isinstance(obj, list):
+        for v in obj:
+            m = max(m, achar_max_id(v))
+    return m
+
+max_id = achar_max_id(dados)
+atuais = dados["roots"]["bookmark_bar"].setdefault("children", [])
+urls_existentes = {c.get("url") for c in atuais if isinstance(c, dict)}
+novos = 0
+for nome, url in itens:
+    if url in urls_existentes:
+        continue
+    max_id += 1
+    atuais.append({
+        "date_added": agora,
+        "date_last_used": "0",
+        "guid": str(uuid.uuid4()),
+        "id": str(max_id),
+        "name": nome,
+        "type": "url",
+        "url": url
+    })
+    novos += 1
+
+dados["roots"]["bookmark_bar"]["date_modified"] = agora
+dados.pop("checksum", None)
+with open(arq_fav, "w", encoding="utf-8") as f:
+    json.dump(dados, f, ensure_ascii=False, indent=3)
+
+prefs = {}
+if os.path.exists(arq_pref):
+    try:
+        with open(arq_pref, "r", encoding="utf-8") as f:
+            prefs = json.load(f)
+    except Exception:
+        prefs = {}
+if not isinstance(prefs, dict):
+    prefs = {}
+prefs.setdefault("bookmark_bar", {})["show_on_all_tabs"] = True
+with open(arq_pref, "w", encoding="utf-8") as f:
+    json.dump(prefs, f, ensure_ascii=False)
+PY
+    echo "${VERDE}  [OK] Chrome ($(basename "$p")): favoritos configurados na barra de favoritos.${FIM}"
+  done
+  chown -R "$USUARIO_TELA" "$base_cr" 2>/dev/null
+}
+
+adicionar_favoritos_firefox() {
+  if [ ! -d "$FX" ]; then
+    aviso "  Mozilla Firefox nao encontrado neste Mac."
+    return
+  fi
+  gravar_politica_firefox "manter" "true"
+  garantir_perfil_firefox
+  local home_u="/Users/$USUARIO_TELA"
+  local base_fx="$home_u/Library/Application Support/Firefox/Profiles"
+  if [ -d "$base_fx" ]; then
+    local p arq
+    for p in "$base_fx"/*; do
+      [ -d "$p" ] || continue
+      for arq in "$p/prefs.js" "$p/user.js"; do
+        [ "$arq" = "$p/prefs.js" ] && [ ! -f "$arq" ] && continue
+        if [ -f "$arq" ]; then
+          grep -v 'browser\.toolbars\.bookmarks\.visibility' "$arq" > "$arq.tmp"
+        else
+          : > "$arq.tmp"
+        fi
+        printf 'user_pref("browser.toolbars.bookmarks.visibility", "always");\n' >> "$arq.tmp"
+        mv -f "$arq.tmp" "$arq"
+        chown "$USUARIO_TELA" "$arq" 2>/dev/null
+      done
+    done
+  fi
+  echo "${VERDE}  [OK] Firefox: ${#FAVORITOS[@]} favoritos adicionados na barra de favoritos.${FIM}"
+}
+
+menu_favoritos() {
+  local op linha nome lista=""
+  for linha in "${FAVORITOS[@]}"; do
+    IFS='|' read -r nome _ <<< "$linha"
+    if [ -z "$lista" ]; then lista="$nome"; else lista="$lista, $nome"; fi
+  done
+  while true; do
+    cabecalho
+    echo "${CIANO}   ADICIONAR FAVORITOS DOS TRIBUNAIS${FIM}"
+    echo "${CINZA}   Adiciona na barra de favoritos sem apagar os favoritos que ja existem:${FIM}"
+    echo "${CINZA}   $lista${FIM}"
+    echo
+    echo "   Em qual navegador voce quer adicionar os favoritos?"
+    echo
+    echo "   [1] Google Chrome"
+    echo "   [2] Mozilla Firefox"
+    echo "   [3] Nos dois (Chrome e Firefox)"
+    echo "   [0] Voltar"; echo
+    op="$(ler_opcao 1 2 3 0)"
+    [ "$op" = "0" ] && return
+    pkill -x "Google Chrome" 2>/dev/null; pkill -x firefox 2>/dev/null; sleep 1
+    if [ "$op" = "1" ] || [ "$op" = "3" ]; then
+      titulo "Google Chrome"
+      adicionar_favoritos_chrome
+    fi
+    if [ "$op" = "2" ] || [ "$op" = "3" ]; then
+      titulo "Mozilla Firefox"
+      adicionar_favoritos_firefox
+    fi
+    pausar
   done
 }
 
@@ -514,7 +809,7 @@ corrigir_4() {
 }
 corrigir_5() {
   rm -f "$DIR_EXT_CHROME/$WEBSIGNER_CHROME_ID.json"
-  rm -f "$FX/Contents/Resources/distribution/policies.json"
+  gravar_politica_firefox "false" "manter"
   echo "${VERDE}  Extensao removida. Feche e abra os navegadores.${FIM}"
 }
 
