@@ -11,6 +11,8 @@ garantir_perfil_firefox() {
   if ! ls "$base_fx"/* >/dev/null 2>&1; then
     launchctl asuser "$(id -u "$USUARIO_TELA")" sudo -u "$USUARIO_TELA" "$FX/Contents/MacOS/firefox" -headless >/dev/null 2>&1 &
     local pid_fx=$! i
+    # disown: sem isso o bash escreve "Terminated: 15" na tela quando o Firefox e fechado
+    disown "$pid_fx" 2>/dev/null
     for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
       sleep 0.5
       ls "$base_fx"/* >/dev/null 2>&1 && break
@@ -55,7 +57,8 @@ gravar_politica_firefox() {
     printf '    "Preferences": {\n'
     printf '      "extensions.webextensions.keepStorageOnUninstall": { "Value": true, "Status": "default" },\n'
     printf '      "browser.aboutwelcome.enabled": { "Value": false, "Status": "default" },\n'
-    printf '      "datareporting.policy.dataSubmissionPolicyBypassNotification": { "Value": true, "Status": "default" }\n'
+    printf '      "datareporting.policy.dataSubmissionPolicyBypassNotification": { "Value": true, "Status": "default" },\n'
+    printf '      "extensions.autoDisableScopes": { "Value": 0, "Status": "default" }\n'
     printf '    }'
     if [ "$ext" = "true" ]; then
       printf ',\n    "ExtensionSettings": {\n'
@@ -114,7 +117,7 @@ configurar_toggles_websigner() {
 
   garantir_perfil_firefox
   if [ -d "$base_fx" ]; then
-    local regex_limpar='ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall|browser\.aboutwelcome\.enabled|datareporting\.policy\.dataSubmissionPolicyBypassNotification|termsofuse\.accepted'
+    local regex_limpar='ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall|browser\.aboutwelcome\.enabled|datareporting\.policy\.dataSubmissionPolicyBypassNotification|termsofuse\.accepted|extensions\.autoDisableScopes'
     for p in "$base_fx"/*; do
       [ -d "$p" ] || continue
       if ls "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*.migrated >/dev/null 2>&1 && \
@@ -132,6 +135,7 @@ configurar_toggles_websigner() {
           printf 'user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);\n'
           printf 'user_pref("termsofuse.acceptedVersion", 999);\n'
           printf 'user_pref("termsofuse.acceptedDate", "1740000000000");\n'
+          printf 'user_pref("extensions.autoDisableScopes", 0);\n'
         } >> "$p/prefs.js.tmp"
         mv -f "$p/prefs.js.tmp" "$p/prefs.js"
         chown "$USUARIO_TELA" "$p/prefs.js" 2>/dev/null
@@ -147,6 +151,7 @@ configurar_toggles_websigner() {
         printf 'user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);\n'
         printf 'user_pref("termsofuse.acceptedVersion", 999);\n'
         printf 'user_pref("termsofuse.acceptedDate", "1740000000000");\n'
+        printf 'user_pref("extensions.autoDisableScopes", 0);\n'
       } >> "$p/user.js.tmp"
       mv -f "$p/user.js.tmp" "$p/user.js"
       chown "$USUARIO_TELA" "$p/user.js" 2>/dev/null
@@ -158,12 +163,19 @@ configurar_toggles_websigner() {
       if [ -d "$FX" ] && [ -f "$PASTA_TI/websigner.xpi" ]; then
         launchctl asuser "$(id -u "$USUARIO_TELA")" sudo -u "$USUARIO_TELA" "$FX/Contents/MacOS/firefox" -headless -no-remote -profile "$p" >/dev/null 2>&1 &
         local pid_p=$! j
+        disown "$pid_p" 2>/dev/null
         for j in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
           sleep 0.5
           if [ -f "$p/extensions/$WEBSIGNER_FIREFOX_ID.xpi" ] && \
              ls "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*.migrated >/dev/null 2>&1; then
             break
           fi
+        done
+        # Espera o Firefox gravar o cadastro da extensao (extensions.json) antes de fechar.
+        # Fechado antes disso, ele desativa a extensao na proxima abertura.
+        for j in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+          if grep -q "\"id\":\"$WEBSIGNER_FIREFOX_ID\"" "$p/extensions.json" 2>/dev/null; then sleep 1; break; fi
+          sleep 0.5
         done
         kill "$pid_p" 2>/dev/null; pkill -x firefox 2>/dev/null; sleep 0.5
         rm -f "$p/parent.lock" "$p/.parentlock"
