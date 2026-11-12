@@ -129,6 +129,29 @@ $Favoritos = @(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# O curl do Windows verifica se o certificado HTTPS do site foi revogado. Em redes que
+# bloqueiam o servidor de revogacao (proxy/firewall), ele falha com
+# CRYPT_E_REVOCATION_OFFLINE e nao baixa nada. Com --ssl-revoke-best-effort ele so pula
+# a verificacao quando o servidor de revogacao esta fora do ar (certificado revogado
+# continua bloqueado). Curl antigo (antes do 7.70) nao conhece a opcao, entao testa antes.
+$script:CurlArgsExtra = @()
+if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+    $ajudaCurl = (& curl.exe --help all 2>$null) -join "`n"
+    if ($ajudaCurl -match "ssl-revoke-best-effort") { $script:CurlArgsExtra = @("--ssl-revoke-best-effort") }
+}
+
+# Baixa uma URL: tenta o curl; se falhar, tenta o Invoke-WebRequest (que nao depende do
+# servidor de revogacao). A conferencia (SHA256 ou assinatura) e feita por quem chama.
+function Baixar-Url($url, $destino) {
+    if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+        & curl.exe -L --fail --retry 5 --retry-delay 3 $script:CurlArgsExtra -# -o $destino $url
+        if ($LASTEXITCODE -eq 0 -and (Test-Path $destino)) { return }
+        Write-Host "  O curl nao conseguiu baixar (codigo $LASTEXITCODE). Tentando outro jeito..." -ForegroundColor Yellow
+    }
+    Remove-Item $destino -Force -ErrorAction SilentlyContinue
+    try { Invoke-WebRequest -Uri $url -OutFile $destino -UseBasicParsing -ErrorAction Stop } catch { }
+}
+
 # Apaga do historico do PowerShell as linhas do kit, para ninguem repetir o comando
 # com a seta para cima. Roda ao abrir o kit e ao sair.
 function Limpar-Historico {
@@ -403,11 +426,7 @@ function Obter-Arquivo($arquivo, $sha256) {
 
     Write-Host "  Baixando $arquivo..."
     $url = "$UrlArquivos/$arquivo"
-    if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
-        & curl.exe -L --fail --retry 5 --retry-delay 3 -# -o $destino $url
-    } else {
-        try { Invoke-WebRequest -Uri $url -OutFile $destino -UseBasicParsing } catch { }
-    }
+    Baixar-Url $url $destino
     if (Hash-Confere $destino $sha256) { return $destino }
 
     Write-Host "  [BLOQUEADO] $arquivo baixado nao confere com a impressao digital (SHA256)." -ForegroundColor Red
@@ -1081,7 +1100,7 @@ function Iniciar-DownloadsEmSegundoPlano($arquivos) {
         $parcial = "$destino.parcial"
         Remove-Item $parcial -Force -ErrorAction SilentlyContinue
         $proc = Start-Process curl.exe -WindowStyle Hidden -PassThru `
-            -ArgumentList "-sL --fail --retry 5 --retry-delay 3 -o `"$parcial`" `"$UrlArquivos/$($a.Arquivo)`""
+            -ArgumentList "-sL --fail --retry 5 --retry-delay 3 $($script:CurlArgsExtra -join ' ') -o `"$parcial`" `"$UrlArquivos/$($a.Arquivo)`""
         $null = $proc.Handle
         $script:DownloadsEmAndamento[$a.Arquivo] = @{ Proc = $proc; Parcial = $parcial; Destino = $destino }
         $nomes += $a.Arquivo
@@ -1146,11 +1165,7 @@ function Baixar-DoFabricante($url, $arquivo, $assinante) {
     $destino = Join-Path "$PastaTI\instaladores" $arquivo
     Remove-Item $destino -Force -ErrorAction SilentlyContinue
     Write-Host "  Baixando $arquivo do site do fabricante..."
-    if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
-        & curl.exe -L --fail --retry 5 --retry-delay 3 -# -o $destino $url
-    } else {
-        try { Invoke-WebRequest -Uri $url -OutFile $destino -UseBasicParsing } catch { }
-    }
+    Baixar-Url $url $destino
     if (-not (Test-Path $destino)) { Write-Host "  Nao consegui baixar $arquivo." -ForegroundColor Red; return $null }
     $assinatura = Get-AuthenticodeSignature $destino
     if ($assinatura.Status -eq "Valid" -and $assinatura.SignerCertificate.Subject -like "*CN=$assinante*") { return $destino }
