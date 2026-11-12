@@ -708,12 +708,14 @@ function Aplicar-ExtensaoWebSigner {
 # Escreve o policies.json do Firefox com as partes do kit:
 #   extensao     = Web Signer forcada
 #   certificados = usar os certificados do Windows + carregar os modulos dos tokens
-#   favoritos    = sites dos tribunais na barra de favoritos
+#   barraFavoritos = sites dos tribunais na barra de favoritos
 # Cada parametro: $true (liga), $false (desliga) ou $null (mantem como esta).
 # A extensao aceita tambem "bloqueada": o Firefox remove a extensao e nao deixa reinstalar
 # (usado ao desinstalar o Web Signer; instalar de novo pelo kit volta para forcada).
 # Assim uma parte nao apaga a outra. Devolve $false se nao houver Firefox.
-function Gravar-PoliticaFirefox($extensao, $certificados, $favoritos = $null) {
+# (o parametro NAO pode se chamar $favoritos: o PowerShell nao diferencia maiusculas e
+# ele esconderia a lista $Favoritos; o Firefox recebia um favorito vazio e rejeitava tudo)
+function Gravar-PoliticaFirefox($extensao, $certificados, $barraFavoritos = $null) {
     $pastaFirefox = Pasta-Firefox
     if (-not $pastaFirefox) { return $false }
     $dist = Join-Path $pastaFirefox "distribution"
@@ -725,7 +727,7 @@ function Gravar-PoliticaFirefox($extensao, $certificados, $favoritos = $null) {
         else { $extensao = $false }
     }
     if ($null -eq $certificados) { $certificados = $atual -like "*ImportEnterpriseRoots*" }
-    if ($null -eq $favoritos) { $favoritos = $atual -like '*"Bookmarks"*' }
+    if ($null -eq $barraFavoritos) { $barraFavoritos = $atual -like '*"Bookmarks"*' }
 
     $pol = @{}
     # cuidado: no PowerShell "$true -eq 'texto'" da verdadeiro, por isso confere o tipo
@@ -748,7 +750,7 @@ function Gravar-PoliticaFirefox($extensao, $certificados, $favoritos = $null) {
         foreach ($nome in $ModulosToken.Keys) { if (Test-Path $ModulosToken[$nome]) { $modulos[$nome] = $ModulosToken[$nome] } }
         if ($modulos.Count) { $pol.SecurityDevices = @{ Add = $modulos } }
     }
-    if ($favoritos) {
+    if ($barraFavoritos) {
         $pol.DisplayBookmarksToolbar = "always"
         $pol.Bookmarks = @($Favoritos | ForEach-Object {
             @{ Title = $_.Nome; URL = $_.Url; Placement = "toolbar" }
