@@ -166,7 +166,9 @@ function Status-ExtensaoWebSigner {
         $pol = "$pastaFirefox\distribution\policies.json"
         $politica = (Test-Path $pol) -and ((Get-Content $pol -Raw) -like "*$WebSignerFirefoxId*") -and ((Get-Content $pol -Raw) -like "*force_installed*")
         $baixada = [bool](Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles\*\extensions\$WebSignerFirefoxId.xpi" -ErrorAction SilentlyContinue)
-        $lista += [pscustomobject]@{ Nome = "Firefox"; Estado = $(if ($politica -and $baixada) { "OK" } elseif ($politica) { "PENDENTE" } else { "FALTA" }) }
+        $desativada = [bool](Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue |
+            Where-Object { WebSigner-DesativadoFirefox $_.FullName })
+        $lista += [pscustomobject]@{ Nome = "Firefox"; Estado = $(if ($politica -and $desativada) { "DESATIVADA" } elseif ($politica -and $baixada) { "OK" } elseif ($politica) { "PENDENTE" } else { "FALTA" }) }
     }
     return $lista
 }
@@ -180,6 +182,7 @@ function Verificar-WebSigner {
             "OK"       { Write-Host "  [OK]     Extensao no $($n.Nome)" -ForegroundColor Green }
             "PENDENTE" { Write-Host "  [AVISO]  $($n.Nome): extensao configurada, mas ainda nao baixada. Abra o $($n.Nome) e espere 1 minuto." -ForegroundColor Yellow }
             "FALTA"    { Write-Host "  [FALTA]  Extensao no $($n.Nome)" -ForegroundColor Red; $faltaPolitica = $true }
+            "DESATIVADA" { Write-Host "  [AVISO]  $($n.Nome): extensao instalada, mas desativada. O kit vai reativar." -ForegroundColor Yellow }
         }
     }
     if ($faltaPolitica -and (Perguntar-SN "Aplicar a extensao Web Signer de novo?")) {

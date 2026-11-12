@@ -64,7 +64,10 @@ function Instalar-Windows {
     $pastaFirefox = Pasta-Firefox
     $okFx = [bool]($pastaFirefox -and (Test-Path "$pastaFirefox\distribution\policies.json") -and
         ((Get-Content "$pastaFirefox\distribution\policies.json" -Raw) -like "*$WebSignerFirefoxId*"))
-    [void]$resultado.Add([pscustomobject]@{ Item = "Extensao no Firefox"; OK = $okFx; Detalhe = $(if ($okFx) { "politica aplicada" } else { "politica ausente" }) })
+    $fxDesativada = $okFx -and [bool](Get-ChildItem "$(Perfil-UsuarioTela)\AppData\Roaming\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue |
+        Where-Object { WebSigner-DesativadoFirefox $_.FullName })
+    if ($fxDesativada) { $okFx = $false }
+    [void]$resultado.Add([pscustomobject]@{ Item = "Extensao no Firefox"; OK = $okFx; Detalhe = $(if ($fxDesativada) { "desativada" } elseif ($okFx) { "politica aplicada" } else { "politica ausente" }) })
     $okIcp = Cadeia-IcpInstalada
     [void]$resultado.Add([pscustomobject]@{ Item = "Cadeia ICP-Brasil"; OK = $okIcp; Detalhe = $(if ($okIcp) { "raizes instaladas" } else { "faltam raizes" }) })
 
@@ -146,13 +149,22 @@ function Instalar-ProgramaWinget($p, $temWinget) {
         if ($p.Escopo) { $parametros = $base + @("--scope", $p.Escopo) }
         & $script:Winget @parametros
         $codigo = $LASTEXITCODE
-        if (-not (Test-Instalado $p.Busca) -and $p.Escopo) {
+        # -1978335215 (0x8A150011) = impressao digital do instalador nao confere. Acontece
+        # muito com o Chrome: o Google troca o arquivo no mesmo link antes do catalogo do
+        # winget ser atualizado. Tentar de novo baixaria o mesmo arquivo (163 MB) e daria o
+        # mesmo erro, entao nesse caso vai direto para o plano B.
+        $erroHash = -1978335215
+        if (-not (Test-Instalado $p.Busca) -and $p.Escopo -and $codigo -ne $erroHash) {
             # alguns pacotes nao tem instalador "para a maquina toda": tenta sem escolher
             & $script:Winget @base
             $codigo = $LASTEXITCODE
         }
         if (Test-Instalado $p.Busca) { return }
-        Write-Host "  O winget nao conseguiu instalar (codigo $codigo)." -ForegroundColor Yellow
+        if ($codigo -eq $erroHash) {
+            Write-Host "  O winget recusou o instalador (impressao digital desatualizada no catalogo). Indo para o plano B." -ForegroundColor Yellow
+        } else {
+            Write-Host "  O winget nao conseguiu instalar (codigo $codigo)." -ForegroundColor Yellow
+        }
     }
     if (-not $p.Reserva) { return }
     $r = $p.Reserva

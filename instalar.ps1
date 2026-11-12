@@ -509,6 +509,60 @@ function Garantir-PerfilFirefox($perfil) {
     return $perfisFx
 }
 
+# O Firefox guarda o cadastro das extensoes do perfil no extensions.json (uma linha so).
+# Devolve o trecho {...} da extensao Web Signer nesse arquivo, ou $null se nao estiver la.
+function Trecho-WebSignerFirefox($dirPerfil) {
+    $arq = Join-Path $dirPerfil "extensions.json"
+    if (-not (Test-Path $arq)) { return $null }
+    $txt = [IO.File]::ReadAllText($arq)
+    $i = $txt.IndexOf('"id":"' + $WebSignerFirefoxId + '"')
+    if ($i -lt 0) { return $null }
+    $ini = $txt.LastIndexOf('{', $i)   # o "id" e o primeiro campo de cada extensao
+    if ($ini -lt 0) { return $null }
+    # acha o "}" que fecha esse bloco, pulando o que estiver dentro de textos "..."
+    $nivel = 0; $emTexto = $false; $fim = -1
+    for ($k = $ini; $k -lt $txt.Length; $k++) {
+        $c = $txt[$k]
+        if ($emTexto) {
+            if ($c -eq '\') { $k++ } elseif ($c -eq '"') { $emTexto = $false }
+            continue
+        }
+        if ($c -eq '"') { $emTexto = $true }
+        elseif ($c -eq '{') { $nivel++ }
+        elseif ($c -eq '}') { $nivel--; if ($nivel -eq 0) { $fim = $k; break } }
+    }
+    if ($fim -lt 0) { return $null }
+    return @{ Arquivo = $arq; Texto = $txt; Ini = $ini; Fim = $fim; Bloco = $txt.Substring($ini, $fim - $ini + 1) }
+}
+
+# A extensao esta no cadastro, mas desativada?
+function WebSigner-DesativadoFirefox($dirPerfil) {
+    $t = Trecho-WebSignerFirefox $dirPerfil
+    return [bool]($t -and ($t.Bloco -match '"userDisabled":true' -or $t.Bloco -match '"active":false'))
+}
+
+# Reativa o Web Signer no cadastro do Firefox (com o Firefox fechado).
+# Por que fica desativado: se o Firefox e fechado antes de cadastrar a extensao, na proxima
+# abertura ele acha o websigner.xpi na pasta do perfil sem saber de onde veio e, por
+# seguranca, desativa (extensions.autoDisableScopes). A politica "force_installed" ve que
+# a extensao ja existe e nao reativa. Mexe so no bloco do Web Signer; as outras extensoes
+# ficam como estao. Apaga o addonStartup.json.lz4 (cache que o Firefox recria sozinho).
+# Devolve $true se reativou.
+function Reativar-WebSignerFirefox($dirPerfil) {
+    if (Get-Process firefox -ErrorAction SilentlyContinue) { return $false }
+    $t = Trecho-WebSignerFirefox $dirPerfil
+    if (-not $t) { return $false }
+    $novo = $t.Bloco -replace '"userDisabled":true', '"userDisabled":false' `
+                     -replace '"active":false', '"active":true' `
+                     -replace '"seen":false', '"seen":true'
+    if ($novo -eq $t.Bloco) { return $false }
+    if (-not (Test-Path "$($t.Arquivo).bak-kit")) { Copy-Item $t.Arquivo "$($t.Arquivo).bak-kit" -Force }
+    $txtNovo = $t.Texto.Substring(0, $t.Ini) + $novo + $t.Texto.Substring($t.Fim + 1)
+    [IO.File]::WriteAllText($t.Arquivo, $txtNovo, (New-Object Text.UTF8Encoding($false)))
+    Remove-Item (Join-Path $dirPerfil "addonStartup.json.lz4") -Force -ErrorAction SilentlyContinue
+    return $true
+}
+
 # Ativa automaticamente os toggles internos da extensao Web Signer:
 #   - Cripto Dispositivos (PKCS #11): Tokens SafeNet, Dispositivos SafeSign AET, Smartcards Athena IDProtect
 #   - Avancadas: Habilitar logs detalhados (trace = true)
@@ -561,11 +615,16 @@ function Configurar-TogglesWebSigner {
         'user_pref("browser.aboutwelcome.enabled", false);',
         'user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);',
         'user_pref("termsofuse.acceptedVersion", 999);',
-        'user_pref("termsofuse.acceptedDate", "1740000000000");'
+        'user_pref("termsofuse.acceptedDate", "1740000000000");',
+        'user_pref("extensions.autoDisableScopes", 0);'
     )
-    $regexLimparFx = 'ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall|browser\.aboutwelcome\.enabled|datareporting\.policy\.dataSubmissionPolicyBypassNotification|termsofuse\.accepted'
+    $regexLimparFx = 'ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall|browser\.aboutwelcome\.enabled|datareporting\.policy\.dataSubmissionPolicyBypassNotification|termsofuse\.accepted|extensions\.autoDisableScopes'
 
     foreach ($d in $perfisFx) {
+        # Maquina em que o Web Signer ficou desativado no Firefox: reativa
+        if (Reativar-WebSignerFirefox $d.FullName) {
+            Write-Host "Firefox: extensao Web Signer estava desativada; reativada." -ForegroundColor Green
+        }
         $dirExt = Join-Path $d.FullName "browser-extension-data\$WebSignerFirefoxId"
         $arqXpiPerfil = Join-Path $d.FullName "extensions\$WebSignerFirefoxId.xpi"
         $jaMigrado = [bool](Get-ChildItem $dirExt -Filter "storage.js*.migrated" -File -ErrorAction SilentlyContinue)
@@ -605,9 +664,16 @@ function Configurar-TogglesWebSigner {
                     $temMig = [bool](Get-ChildItem $dirExt -Filter "storage.js*.migrated" -File -ErrorAction SilentlyContinue)
                     if ($temXpi -and $temMig) { break }
                 }
+                # Espera o Firefox gravar o cadastro da extensao (extensions.json) antes de
+                # fechar. Fechado antes disso, ele desativa a extensao na proxima abertura.
+                for ($i = 0; $i -lt 16 -and -not $procFx.HasExited; $i++) {
+                    if (Trecho-WebSignerFirefox $d.FullName) { Start-Sleep -Seconds 1; break }
+                    Start-Sleep -Milliseconds 500
+                }
                 if (-not $procFx.HasExited) { Stop-Process -Id $procFx.Id -Force -ErrorAction SilentlyContinue }
                 Start-Sleep -Milliseconds 500
                 Remove-Item "$($d.FullName)\parent.lock" -Force -ErrorAction SilentlyContinue
+                [void](Reativar-WebSignerFirefox $d.FullName)
             } catch { }
         }
     }
@@ -670,6 +736,8 @@ function Gravar-PoliticaFirefox($extensao, $certificados, $favoritos = $null) {
         $pol.ExtensionSettings = @{ $WebSignerFirefoxId = @{ installation_mode = "force_installed"; install_url = $urlXpi } }
         $pol.Preferences = @{
             "extensions.webextensions.keepStorageOnUninstall" = @{ Value = $true; Status = "default" }
+            # nao desativar extensao achada na pasta do perfil (o websigner.xpi do kit)
+            "extensions.autoDisableScopes" = @{ Value = 0; Status = "default" }
             "browser.aboutwelcome.enabled" = @{ Value = $false; Status = "default" }
             "datareporting.policy.dataSubmissionPolicyBypassNotification" = @{ Value = $true; Status = "default" }
         }
@@ -1065,7 +1133,10 @@ function Instalar-Windows {
     $pastaFirefox = Pasta-Firefox
     $okFx = [bool]($pastaFirefox -and (Test-Path "$pastaFirefox\distribution\policies.json") -and
         ((Get-Content "$pastaFirefox\distribution\policies.json" -Raw) -like "*$WebSignerFirefoxId*"))
-    [void]$resultado.Add([pscustomobject]@{ Item = "Extensao no Firefox"; OK = $okFx; Detalhe = $(if ($okFx) { "politica aplicada" } else { "politica ausente" }) })
+    $fxDesativada = $okFx -and [bool](Get-ChildItem "$(Perfil-UsuarioTela)\AppData\Roaming\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue |
+        Where-Object { WebSigner-DesativadoFirefox $_.FullName })
+    if ($fxDesativada) { $okFx = $false }
+    [void]$resultado.Add([pscustomobject]@{ Item = "Extensao no Firefox"; OK = $okFx; Detalhe = $(if ($fxDesativada) { "desativada" } elseif ($okFx) { "politica aplicada" } else { "politica ausente" }) })
     $okIcp = Cadeia-IcpInstalada
     [void]$resultado.Add([pscustomobject]@{ Item = "Cadeia ICP-Brasil"; OK = $okIcp; Detalhe = $(if ($okIcp) { "raizes instaladas" } else { "faltam raizes" }) })
 
@@ -1147,13 +1218,22 @@ function Instalar-ProgramaWinget($p, $temWinget) {
         if ($p.Escopo) { $parametros = $base + @("--scope", $p.Escopo) }
         & $script:Winget @parametros
         $codigo = $LASTEXITCODE
-        if (-not (Test-Instalado $p.Busca) -and $p.Escopo) {
+        # -1978335215 (0x8A150011) = impressao digital do instalador nao confere. Acontece
+        # muito com o Chrome: o Google troca o arquivo no mesmo link antes do catalogo do
+        # winget ser atualizado. Tentar de novo baixaria o mesmo arquivo (163 MB) e daria o
+        # mesmo erro, entao nesse caso vai direto para o plano B.
+        $erroHash = -1978335215
+        if (-not (Test-Instalado $p.Busca) -and $p.Escopo -and $codigo -ne $erroHash) {
             # alguns pacotes nao tem instalador "para a maquina toda": tenta sem escolher
             & $script:Winget @base
             $codigo = $LASTEXITCODE
         }
         if (Test-Instalado $p.Busca) { return }
-        Write-Host "  O winget nao conseguiu instalar (codigo $codigo)." -ForegroundColor Yellow
+        if ($codigo -eq $erroHash) {
+            Write-Host "  O winget recusou o instalador (impressao digital desatualizada no catalogo). Indo para o plano B." -ForegroundColor Yellow
+        } else {
+            Write-Host "  O winget nao conseguiu instalar (codigo $codigo)." -ForegroundColor Yellow
+        }
     }
     if (-not $p.Reserva) { return }
     $r = $p.Reserva
@@ -1556,7 +1636,9 @@ function Status-ExtensaoWebSigner {
         $pol = "$pastaFirefox\distribution\policies.json"
         $politica = (Test-Path $pol) -and ((Get-Content $pol -Raw) -like "*$WebSignerFirefoxId*") -and ((Get-Content $pol -Raw) -like "*force_installed*")
         $baixada = [bool](Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles\*\extensions\$WebSignerFirefoxId.xpi" -ErrorAction SilentlyContinue)
-        $lista += [pscustomobject]@{ Nome = "Firefox"; Estado = $(if ($politica -and $baixada) { "OK" } elseif ($politica) { "PENDENTE" } else { "FALTA" }) }
+        $desativada = [bool](Get-ChildItem "$perfil\AppData\Roaming\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue |
+            Where-Object { WebSigner-DesativadoFirefox $_.FullName })
+        $lista += [pscustomobject]@{ Nome = "Firefox"; Estado = $(if ($politica -and $desativada) { "DESATIVADA" } elseif ($politica -and $baixada) { "OK" } elseif ($politica) { "PENDENTE" } else { "FALTA" }) }
     }
     return $lista
 }
@@ -1570,6 +1652,7 @@ function Verificar-WebSigner {
             "OK"       { Write-Host "  [OK]     Extensao no $($n.Nome)" -ForegroundColor Green }
             "PENDENTE" { Write-Host "  [AVISO]  $($n.Nome): extensao configurada, mas ainda nao baixada. Abra o $($n.Nome) e espere 1 minuto." -ForegroundColor Yellow }
             "FALTA"    { Write-Host "  [FALTA]  Extensao no $($n.Nome)" -ForegroundColor Red; $faltaPolitica = $true }
+            "DESATIVADA" { Write-Host "  [AVISO]  $($n.Nome): extensao instalada, mas desativada. O kit vai reativar." -ForegroundColor Yellow }
         }
     }
     if ($faltaPolitica -and (Perguntar-SN "Aplicar a extensao Web Signer de novo?")) {
