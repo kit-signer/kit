@@ -9,6 +9,10 @@
 #
 #  Pode rodar quantas vezes quiser: o que ja estiver instalado e pulado.
 #  Compativel com o bash 3.2 que vem no macOS.
+#
+#  ATENCAO: este arquivo e GERADO a partir da pasta src/mac.
+#  Nao edite aqui: edite os arquivos de src/mac e rode o build.ps1
+#  (veja "Como editar o kit" no README).
 # =====================================================================
 
 # ========================= CONFIGURACAO ==============================
@@ -284,6 +288,8 @@ instalar_arquivo() {
   esac
   return $ok
 }
+
+# ===================== NAVEGADORES E WEB SIGNER ======================
 
 DIR_EXT_CHROME="/Library/Application Support/Google/Chrome/External Extensions"
 FX="/Applications/Firefox.app"

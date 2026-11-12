@@ -9,6 +9,10 @@
 #
 #  Pode rodar quantas vezes quiser: o que ja estiver instalado e pulado.
 #  Arquivo propositalmente sem acentos (o PowerShell 5.1 le acentos errado).
+#
+#  ATENCAO: este arquivo e GERADO a partir da pasta src\windows.
+#  Nao edite aqui: edite os arquivos de src\windows e rode o build.ps1
+#  (veja "Como editar o kit" no README).
 # =====================================================================
 
 # ========================= CONFIGURACAO ==============================
@@ -463,6 +467,8 @@ function Add-ListaForcada($chave, $valor) {
     New-ItemProperty -Path $chave -Name "$n" -Value $valor -PropertyType String -Force | Out-Null
 }
 
+# ===================== NAVEGADORES E WEB SIGNER ======================
+
 function Pasta-Firefox {
     # tambem a instalacao "so do usuario" (AppData\Local), que o winget as vezes escolhe
     $perfil = Perfil-UsuarioTela
@@ -705,6 +711,8 @@ function Gravar-PoliticaFirefox($extensao, $certificados, $favoritos = $null) {
     [IO.File]::WriteAllText($arqPol, (@{ policies = $pol } | ConvertTo-Json -Depth 10), $utf8SemBom)
     return $true
 }
+
+# ===================== CERTIFICADOS (ICP-BRASIL) =====================
 
 function Adicionar-AoRepositorio($nome, $certs) {
     $repo = New-Object Security.Cryptography.X509Certificates.X509Store($nome, "LocalMachine")

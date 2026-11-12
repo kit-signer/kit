@@ -1,0 +1,18 @@
+# Confere, a cada envio, se o instalar.ps1 e o instalar.sh estao em dia com a pasta src
+# (alguem editou src/ e esqueceu de rodar o build.ps1?) e se nao tem erro de sintaxe.
+name: Verificar kit
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: instalar.ps1 e instalar.sh em dia com src/ (e sintaxe do .ps1)
+        shell: pwsh
+        run: ./build.ps1 -Verificar
+      - name: Sintaxe do instalar.sh
+        run: bash -n instalar.sh
