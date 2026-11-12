@@ -98,13 +98,25 @@ configurar_toggles_websigner() {
 
   local manifest_b64="lXy5xSIAAQEabGV2ZWxkYi5CeXRld2lzZUNvbXBhcmF0b3ICAAMCBAA="
   local log_mac_b64="XSYwaUcAAQEAAAAAAAAAAgAAAAEGcGtjczExJlsibGliZVRva2VuLmR5bGliIiwibGliYWV0cGtzcy5keWxpYiJdAQV0cmFjZQR0cnVl"
+  local pkcs11_json='["libeToken.dylib","libaetpkss.dylib"]'
+  local marca="libeToken.dylib"
+  # Token SafeNet nao reconhecido: o Web Signer acha o driver pelo nome curto
+  # (libeToken.dylib), e em varios Macs isso nao basta. Com o SafeNet instalado,
+  # acrescenta tambem o caminho completo como "modulo personalizado" (o mesmo que
+  # se digitava a mao em Cripto Dispositivos). Mesmo conteudo, com o caminho a mais:
+  #   pkcs11 = ["libeToken.dylib","libaetpkss.dylib","/usr/local/lib/libeTPkcs11.dylib"]
+  if [ -f "$MODULO_SAFENET_MAC" ]; then
+    log_mac_b64="YtCCQGoAAQEAAAAAAAAAAgAAAAEGcGtjczExSVsibGliZVRva2VuLmR5bGliIiwibGliYWV0cGtzcy5keWxpYiIsIi91c3IvbG9jYWwvbGliL2xpYmVUUGtjczExLmR5bGliIl0BBXRyYWNlBHRydWU="
+    pkcs11_json='["libeToken.dylib","libaetpkss.dylib","/usr/local/lib/libeTPkcs11.dylib"]'
+    marca="libeTPkcs11.dylib"
+  fi
   local p dir_db
 
   mkdir -p "$base_cr/Default"
   for p in "$base_cr"/Default "$base_cr"/Profile\ *; do
     [ -d "$p" ] || continue
     dir_db="$p/Local Extension Settings/$WEBSIGNER_CHROME_ID"
-    if grep -q "libeToken.dylib" "$dir_db"/*.log "$dir_db"/*.ldb 2>/dev/null && \
+    if grep -q "$marca" "$dir_db"/*.log "$dir_db"/*.ldb 2>/dev/null && \
        grep -q "trace" "$dir_db"/*.log "$dir_db"/*.ldb 2>/dev/null; then
       continue
     fi
@@ -120,7 +132,7 @@ configurar_toggles_websigner() {
     local regex_limpar='ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall|browser\.aboutwelcome\.enabled|datareporting\.policy\.dataSubmissionPolicyBypassNotification|termsofuse\.accepted|extensions\.autoDisableScopes'
     for p in "$base_fx"/*; do
       [ -d "$p" ] || continue
-      if ls "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*.migrated >/dev/null 2>&1 && \
+      if grep -q "$marca" "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*.migrated 2>/dev/null && \
          [ -f "$p/extensions/$WEBSIGNER_FIREFOX_ID.xpi" ]; then
         continue
       fi
@@ -157,7 +169,7 @@ configurar_toggles_websigner() {
       chown "$USUARIO_TELA" "$p/user.js" 2>/dev/null
       mkdir -p "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"
       rm -f "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*
-      printf '{"pkcs11":["libeToken.dylib","libaetpkss.dylib"],"trace":true}\n' > "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID/storage.js"
+      printf '{"pkcs11":%s,"trace":true}\n' "$pkcs11_json" > "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID/storage.js"
       chown -R "$USUARIO_TELA" "$p/browser-extension-data" 2>/dev/null
 
       if [ -d "$FX" ] && [ -f "$PASTA_TI/websigner.xpi" ]; then

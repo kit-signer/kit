@@ -70,6 +70,8 @@ NAVEGADORES=(
 WEBSIGNER_CHROME_ID="bbafmabaelnnkondpfpjmdklbmfnbmol"
 CHROME_STORE_UPDATE="https://clients2.google.com/service/update2/crx"
 WEBSIGNER_FIREFOX_ID="websigner@softplan_com_br"
+# Driver do token SafeNet no Mac (o Web Signer recebe esse caminho completo)
+MODULO_SAFENET_MAC="/usr/local/lib/libeTPkcs11.dylib"
 WEBSIGNER_XPI="websigner.xpi|2c16afbfb80dff721e2796ffae262093a8558d68ac15b77af5f8169085ea5c6a"
 
 # Tipos de token reconhecidos no cabecalho, pelo nome que o aparelho USB informa.

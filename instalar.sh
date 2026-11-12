@@ -70,6 +70,8 @@ NAVEGADORES=(
 WEBSIGNER_CHROME_ID="bbafmabaelnnkondpfpjmdklbmfnbmol"
 CHROME_STORE_UPDATE="https://clients2.google.com/service/update2/crx"
 WEBSIGNER_FIREFOX_ID="websigner@softplan_com_br"
+# Driver do token SafeNet no Mac (o Web Signer recebe esse caminho completo)
+MODULO_SAFENET_MAC="/usr/local/lib/libeTPkcs11.dylib"
 WEBSIGNER_XPI="websigner.xpi|2c16afbfb80dff721e2796ffae262093a8558d68ac15b77af5f8169085ea5c6a"
 
 # Tipos de token reconhecidos no cabecalho, pelo nome que o aparelho USB informa.
@@ -389,13 +391,25 @@ configurar_toggles_websigner() {
 
   local manifest_b64="lXy5xSIAAQEabGV2ZWxkYi5CeXRld2lzZUNvbXBhcmF0b3ICAAMCBAA="
   local log_mac_b64="XSYwaUcAAQEAAAAAAAAAAgAAAAEGcGtjczExJlsibGliZVRva2VuLmR5bGliIiwibGliYWV0cGtzcy5keWxpYiJdAQV0cmFjZQR0cnVl"
+  local pkcs11_json='["libeToken.dylib","libaetpkss.dylib"]'
+  local marca="libeToken.dylib"
+  # Token SafeNet nao reconhecido: o Web Signer acha o driver pelo nome curto
+  # (libeToken.dylib), e em varios Macs isso nao basta. Com o SafeNet instalado,
+  # acrescenta tambem o caminho completo como "modulo personalizado" (o mesmo que
+  # se digitava a mao em Cripto Dispositivos). Mesmo conteudo, com o caminho a mais:
+  #   pkcs11 = ["libeToken.dylib","libaetpkss.dylib","/usr/local/lib/libeTPkcs11.dylib"]
+  if [ -f "$MODULO_SAFENET_MAC" ]; then
+    log_mac_b64="YtCCQGoAAQEAAAAAAAAAAgAAAAEGcGtjczExSVsibGliZVRva2VuLmR5bGliIiwibGliYWV0cGtzcy5keWxpYiIsIi91c3IvbG9jYWwvbGliL2xpYmVUUGtjczExLmR5bGliIl0BBXRyYWNlBHRydWU="
+    pkcs11_json='["libeToken.dylib","libaetpkss.dylib","/usr/local/lib/libeTPkcs11.dylib"]'
+    marca="libeTPkcs11.dylib"
+  fi
   local p dir_db
 
   mkdir -p "$base_cr/Default"
   for p in "$base_cr"/Default "$base_cr"/Profile\ *; do
     [ -d "$p" ] || continue
     dir_db="$p/Local Extension Settings/$WEBSIGNER_CHROME_ID"
-    if grep -q "libeToken.dylib" "$dir_db"/*.log "$dir_db"/*.ldb 2>/dev/null && \
+    if grep -q "$marca" "$dir_db"/*.log "$dir_db"/*.ldb 2>/dev/null && \
        grep -q "trace" "$dir_db"/*.log "$dir_db"/*.ldb 2>/dev/null; then
       continue
     fi
@@ -411,7 +425,7 @@ configurar_toggles_websigner() {
     local regex_limpar='ExtensionStorageIDB\.migrated\.websigner@softplan_com_br|extensions\.webextensions\.keepStorageOnUninstall|browser\.aboutwelcome\.enabled|datareporting\.policy\.dataSubmissionPolicyBypassNotification|termsofuse\.accepted|extensions\.autoDisableScopes'
     for p in "$base_fx"/*; do
       [ -d "$p" ] || continue
-      if ls "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*.migrated >/dev/null 2>&1 && \
+      if grep -q "$marca" "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*.migrated 2>/dev/null && \
          [ -f "$p/extensions/$WEBSIGNER_FIREFOX_ID.xpi" ]; then
         continue
       fi
@@ -448,7 +462,7 @@ configurar_toggles_websigner() {
       chown "$USUARIO_TELA" "$p/user.js" 2>/dev/null
       mkdir -p "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"
       rm -f "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID"/storage.js*
-      printf '{"pkcs11":["libeToken.dylib","libaetpkss.dylib"],"trace":true}\n' > "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID/storage.js"
+      printf '{"pkcs11":%s,"trace":true}\n' "$pkcs11_json" > "$p/browser-extension-data/$WEBSIGNER_FIREFOX_ID/storage.js"
       chown -R "$USUARIO_TELA" "$p/browser-extension-data" 2>/dev/null
 
       if [ -d "$FX" ] && [ -f "$PASTA_TI/websigner.xpi" ]; then
@@ -805,7 +819,7 @@ menu_favoritos() {
 # "Nome|Descricao" na lista CORRECOES, na mesma posicao N.
 
 CORRECOES=(
-  "Token nao reconhecido|Reinicia o servico de leitor de token do macOS. Tire e coloque o token depois."
+  "Token nao reconhecido|Reinicia o servico de leitor de token e configura o driver SafeNet no Web Signer. Tire e coloque o token depois."
   "Extensao Web Signer sumiu|Registra de novo a extensao no Chrome e no Firefox."
   "Navegador ou PJeOffice travado|Fecha Chrome, Firefox e PJeOffice (salve o que estiver aberto antes)."
   "Programa 'nao pode ser aberto'|Libera os apps de /Applications bloqueados pelo Gatekeeper."
@@ -814,6 +828,9 @@ CORRECOES=(
 
 corrigir_1() {
   killall -9 com.apple.ctkpcscd 2>/dev/null   # o macOS liga o servico de novo sozinho
+  # Web Signer: garante o caminho completo do driver SafeNet (/usr/local/lib/libeTPkcs11.dylib)
+  # em Cripto Dispositivos, no Chrome e no Firefox (fecha os navegadores)
+  if [ -f "$MODULO_SAFENET_MAC" ]; then configurar_toggles_websigner; fi
   echo "${VERDE}  Servico reiniciado. Tire o token, espere 5 segundos e coloque de novo.${FIM}"
 }
 corrigir_2() { aplicar_extensao; echo "${CIANO}  Feche e abra os navegadores.${FIM}"; }

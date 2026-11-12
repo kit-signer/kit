@@ -3,7 +3,7 @@
 # "Nome|Descricao" na lista CORRECOES, na mesma posicao N.
 
 CORRECOES=(
-  "Token nao reconhecido|Reinicia o servico de leitor de token do macOS. Tire e coloque o token depois."
+  "Token nao reconhecido|Reinicia o servico de leitor de token e configura o driver SafeNet no Web Signer. Tire e coloque o token depois."
   "Extensao Web Signer sumiu|Registra de novo a extensao no Chrome e no Firefox."
   "Navegador ou PJeOffice travado|Fecha Chrome, Firefox e PJeOffice (salve o que estiver aberto antes)."
   "Programa 'nao pode ser aberto'|Libera os apps de /Applications bloqueados pelo Gatekeeper."
@@ -12,6 +12,9 @@ CORRECOES=(
 
 corrigir_1() {
   killall -9 com.apple.ctkpcscd 2>/dev/null   # o macOS liga o servico de novo sozinho
+  # Web Signer: garante o caminho completo do driver SafeNet (/usr/local/lib/libeTPkcs11.dylib)
+  # em Cripto Dispositivos, no Chrome e no Firefox (fecha os navegadores)
+  if [ -f "$MODULO_SAFENET_MAC" ]; then configurar_toggles_websigner; fi
   echo "${VERDE}  Servico reiniciado. Tire o token, espere 5 segundos e coloque de novo.${FIM}"
 }
 corrigir_2() { aplicar_extensao; echo "${CIANO}  Feche e abra os navegadores.${FIM}"; }
