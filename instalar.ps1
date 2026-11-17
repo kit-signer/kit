@@ -113,6 +113,18 @@ $ModulosToken = [ordered]@{
     "SafeSign" = "C:\Windows\System32\aetpkss1.dll"
 }
 
+# qpdf: programa livre que le e tira a protecao de PDF. Usado na correcao
+# "PJe: documento esta encriptado (ASN-017)". Baixado do GitHub do proprio qpdf (ou da
+# pasta "instaladores" do pendrive, com o mesmo nome) e so usado se a impressao digital
+# bater. O Sha256 e o mesmo publicado pelo projeto no arquivo qpdf-VERSAO.sha256 do release.
+# Para atualizar: troque Versao, Url, Arquivo e Sha256 (veja github.com/qpdf/qpdf/releases).
+$Qpdf = @{
+    Versao  = "12.4.2"
+    Url     = "https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2-msvc64.zip"
+    Arquivo = "qpdf-12.4.2-msvc64.zip"
+    Sha256  = "db87077e683630c1217e0e8f9a20a9749d952ab676e881c3689187763a5de25d"
+}
+
 # Favoritos adicionados na barra de favoritos do Chrome e do Firefox (menu "Adicionar favoritos").
 # Para incluir outro site, copie uma linha e troque Nome e Url.
 $Favoritos = @(
@@ -1715,6 +1727,134 @@ function Acertar-Relogio {
     Write-Host "  Confira tambem se a conta certa esta selecionada no app (pode ter varias)."
 }
 
+# ---- PDF protegido (PJe: "O documento esta encriptado e nao pode ser processado") ----
+# Alguns PDFs (de banco, Receita, cartorio, assinados no gov.br...) vem com protecao. O PJe
+# nao consegue colocar a assinatura do advogado neles e da o erro ASN-017 em cada anexo.
+# O erro so mostra o id do documento principal, entao a correcao confere a pasta inteira.
+
+# Devolve o caminho do qpdf.exe (baixa e extrai na primeira vez), ou $null
+function Obter-Qpdf {
+    $pastaFerramentas = "$PastaTI\ferramentas"
+    $pastaQpdf = Join-Path $pastaFerramentas ([IO.Path]::GetFileNameWithoutExtension($Qpdf.Arquivo))
+    $exe = Join-Path $pastaQpdf "bin\qpdf.exe"
+    if (Test-Path $exe) { return $exe }
+
+    $zip = $null
+    if ($PastaLocal) {
+        $local = Join-Path $PastaLocal $Qpdf.Arquivo
+        if (Hash-Confere $local $Qpdf.Sha256) { $zip = $local }
+    }
+    if (-not $zip) {
+        $zip = Join-Path "$PastaTI\instaladores" $Qpdf.Arquivo
+        if (-not (Hash-Confere $zip $Qpdf.Sha256)) {
+            Write-Host "  Baixando o qpdf $($Qpdf.Versao) (28 MB, so na primeira vez)..."
+            Baixar-Url $Qpdf.Url $zip
+            if (-not (Hash-Confere $zip $Qpdf.Sha256)) {
+                Write-Host "  [BLOQUEADO] O qpdf baixado nao confere com a impressao digital (SHA256). Nao vou usar." -ForegroundColor Red
+                Remove-Item $zip -Force -ErrorAction SilentlyContinue
+                return $null
+            }
+        }
+    }
+    New-Item -ItemType Directory -Path $pastaFerramentas -Force | Out-Null
+    try {
+        Expand-Archive -LiteralPath $zip -DestinationPath $pastaFerramentas -Force -ErrorAction Stop
+    } catch {
+        Write-Host "  Nao consegui extrair o qpdf: $($_.Exception.Message)" -ForegroundColor Red
+        return $null
+    }
+    if (Test-Path $exe) { return $exe }
+    Write-Host "  Extrai o qpdf, mas nao achei o qpdf.exe em $pastaQpdf." -ForegroundColor Red
+    return $null
+}
+
+# Janela para escolher a pasta dos PDFs (comeca nos Downloads do usuario da tela).
+# Se a janela nao abrir, pede o caminho digitado.
+function Escolher-PastaPdfs {
+    $inicio = Join-Path (Perfil-UsuarioTela) "Downloads"
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        Write-Host "  Escolha a pasta com os PDFs na janela que abriu (se nao aparecer, olhe atras desta)."
+        $janela = New-Object System.Windows.Forms.FolderBrowserDialog
+        $janela.Description = "Pasta com os PDFs que deram erro no PJe"
+        if (Test-Path $inicio) { $janela.SelectedPath = $inicio }
+        $dono = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true; ShowInTaskbar = $false }
+        $resposta = $janela.ShowDialog($dono)
+        $dono.Dispose()
+        if ($resposta -eq [System.Windows.Forms.DialogResult]::OK) { return $janela.SelectedPath }
+        return $null
+    } catch { }
+    Write-Host "  Dica: no Explorer, clique com o direito na pasta > 'Copiar como caminho'."
+    $p = (Read-Host "   Cole o caminho da pasta com os PDFs").Trim().Trim('"')
+    if ($p -and (Test-Path -LiteralPath $p -PathType Container)) { return $p }
+    return $null
+}
+
+# LIVRE = sem protecao | PROTEGIDO = da erro no PJe | SENHA = precisa de senha para abrir | ERRO = nao deu para ler
+function Estado-Pdf($qpdf, $arquivo) {
+    $saida = & $qpdf --show-encryption $arquivo 2>&1 | Out-String
+    $codigo = $LASTEXITCODE
+    if ($saida -match "not encrypted") { return "LIVRE" }
+    if ($saida -match "incorrect password|invalid password") { return "SENHA" }
+    if ($codigo -eq 0 -or $codigo -eq 3) { return "PROTEGIDO" }
+    return "ERRO"
+}
+
+function Corrigir-PdfEncriptado {
+    $qpdf = Obter-Qpdf
+    if (-not $qpdf) { return }
+    $pasta = Escolher-PastaPdfs
+    if (-not $pasta) { Write-Host "  Nenhuma pasta escolhida." -ForegroundColor Yellow; return }
+
+    $pdfs = @(Get-ChildItem -LiteralPath $pasta -Filter *.pdf -File -ErrorAction SilentlyContinue | Sort-Object Name)
+    if ($pdfs.Count -eq 0) { Write-Host "  Nenhum PDF em $pasta." -ForegroundColor Yellow; return }
+
+    Write-Host "  Conferindo $($pdfs.Count) PDF(s) em $pasta"
+    Write-Host ""
+    $protegidos = @(); $comSenha = 0
+    foreach ($f in $pdfs) {
+        switch (Estado-Pdf $qpdf $f.FullName) {
+            "LIVRE"     { Write-Host "  [OK]         $($f.Name)" -ForegroundColor Green }
+            "PROTEGIDO" { Write-Host "  [PROTEGIDO]  $($f.Name)" -ForegroundColor Yellow; $protegidos += $f }
+            "SENHA"     { Write-Host "  [SENHA]      $($f.Name)" -ForegroundColor Red; $comSenha++ }
+            default     { Write-Host "  [ERRO]       $($f.Name): nao consegui ler (arquivo danificado?)" -ForegroundColor Red }
+        }
+    }
+    Write-Host ""
+    if ($comSenha) {
+        Write-Host "  [SENHA] precisa da senha para abrir. Peca a senha a quem enviou, abra o PDF com ela" -ForegroundColor Red
+        Write-Host "  e use Ctrl+P > 'Microsoft Print to PDF' para gerar uma copia sem protecao." -ForegroundColor Red
+    }
+    if ($protegidos.Count -eq 0) {
+        Write-Host "  Nenhum PDF protegido nesta pasta. Se o PJe ainda der o erro, confira se a pasta e a certa." -ForegroundColor Cyan
+        return
+    }
+    if (-not (Perguntar-SN "Gerar copias sem protecao dos $($protegidos.Count) arquivo(s) protegido(s)?")) { return }
+
+    $destino = Join-Path $pasta "sem-protecao"
+    New-Item -ItemType Directory -Path $destino -Force | Out-Null
+    $feitos = 0
+    foreach ($f in $protegidos) {
+        $novo = Join-Path $destino $f.Name
+        # --remove-restrictions tira tambem a trava de "nao alterar" que vem com a assinatura (gov.br)
+        & $qpdf --decrypt --remove-restrictions $f.FullName $novo 2>&1 | Out-Null
+        if ((Test-Path -LiteralPath $novo) -and ((Estado-Pdf $qpdf $novo) -eq "LIVRE")) {
+            Write-Host "  [CORRIGIDO]  $($f.Name)" -ForegroundColor Green
+            $feitos++
+        } else {
+            Write-Host "  [FALHOU]     $($f.Name): use Ctrl+P > 'Microsoft Print to PDF' neste." -ForegroundColor Red
+            Remove-Item -LiteralPath $novo -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Host ""
+    if ($feitos) {
+        Write-Host "  $feitos copia(s) sem protecao em: $destino" -ForegroundColor Green
+        Write-Host "  No PJe: exclua os anexos com erro e anexe estes no lugar. Os originais nao foram alterados." -ForegroundColor Cyan
+        Write-Host "  Se o PDF tinha assinatura gov.br, ela aparece na copia mas deixa de valer. Guarde o original." -ForegroundColor Yellow
+        Start-Process explorer.exe -ArgumentList "`"$destino`""
+    }
+}
+
 $Correcoes = @(
     @{
         Nome = "Tribunal nao carrega (eSAJ, eproc...)"
@@ -1739,6 +1879,15 @@ $Correcoes = @(
         Nome = "Erro de conexao com certificado digital"
         Descricao = "Ex.: 'Ocorreu um erro durante uma conexao com certificado-sso.tjal.jus.br'. Confere o token e instala a cadeia ICP-Brasil."
         Acao = { Corrigir-CertificadoDigital }
+    },
+    @{
+        Nome = "PJe: documento esta encriptado (ASN-017)"
+        Descricao = "Confere uma pasta de PDFs, mostra quais estao protegidos e gera copias sem protecao para anexar."
+        Acao = {
+            $log = "$PastaTI\logs\pdf-$env:COMPUTERNAME-$(Get-Date -Format 'yyyyMMdd-HHmm').txt"
+            Start-Transcript -Path $log | Out-Null
+            try { Corrigir-PdfEncriptado } finally { Stop-Transcript | Out-Null }
+        }
     },
     @{
         Nome = "Limpar cache dos navegadores"

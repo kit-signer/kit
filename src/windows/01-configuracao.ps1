@@ -113,6 +113,18 @@ $ModulosToken = [ordered]@{
     "SafeSign" = "C:\Windows\System32\aetpkss1.dll"
 }
 
+# qpdf: programa livre que le e tira a protecao de PDF. Usado na correcao
+# "PJe: documento esta encriptado (ASN-017)". Baixado do GitHub do proprio qpdf (ou da
+# pasta "instaladores" do pendrive, com o mesmo nome) e so usado se a impressao digital
+# bater. O Sha256 e o mesmo publicado pelo projeto no arquivo qpdf-VERSAO.sha256 do release.
+# Para atualizar: troque Versao, Url, Arquivo e Sha256 (veja github.com/qpdf/qpdf/releases).
+$Qpdf = @{
+    Versao  = "12.4.2"
+    Url     = "https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2-msvc64.zip"
+    Arquivo = "qpdf-12.4.2-msvc64.zip"
+    Sha256  = "db87077e683630c1217e0e8f9a20a9749d952ab676e881c3689187763a5de25d"
+}
+
 # Favoritos adicionados na barra de favoritos do Chrome e do Firefox (menu "Adicionar favoritos").
 # Para incluir outro site, copie uma linha e troque Nome e Url.
 $Favoritos = @(

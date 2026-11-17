@@ -62,6 +62,19 @@ Adiciona os sites dos tribunais e ferramentas úteis (`e-SAJ Estadual`, `PJE 2.X
 - **Não apaga** os favoritos que a pessoa já tiver na máquina e não duplica se rodar mais de uma vez.
 - Para incluir ou tirar algum favorito no futuro, edite a lista `$Favoritos` (no `src/windows/01-configuracao.ps1`) e `FAVORITOS` (no `src/mac/01-configuracao.sh`) e rode o `build.ps1`.
 
+### PJe: "O documento está encriptado" (ASN-017)
+
+Quando o PJe recusa a assinatura com `ASN-017 ... O documento está encriptado e não pode ser processado pelo PJe`, algum PDF anexado tem proteção. É comum em PDFs de banco, da Receita, de cartório e nos assinados pelo gov.br. O erro só mostra o id do documento principal, sem dizer qual anexo é o culpado. A correção "PJe: documento esta encriptado (ASN-017)" (só no Windows) resolve assim:
+
+1. Na primeira vez, baixa o [qpdf](https://github.com/qpdf/qpdf), um programa livre que lê e tira a proteção de PDF. Ele só é usado se a impressão digital bater com a de `$Qpdf`, no `src/windows/01-configuracao.ps1`. Fica em `C:\ProgramData\TI\ferramentas`. No pendrive, pode ficar na pasta `instaladores/` com o mesmo nome do zip.
+2. Abre uma janela para escolher a pasta com os PDFs.
+3. Lista cada arquivo: **[OK]** sem proteção, **[PROTEGIDO]** (é o que dá o erro), **[SENHA]** (precisa de senha para abrir) ou **[ERRO]** (arquivo danificado).
+4. Se você confirmar, cria cópias sem proteção dos protegidos na subpasta `sem-protecao` e abre essa pasta. Os originais não são alterados. É o mesmo que fazer Ctrl+P › "Microsoft Print to PDF" em cada um, mas de uma vez só e sem perder qualidade.
+
+No PJe, exclua os anexos com erro e anexe as cópias. Se o PDF tinha assinatura gov.br, ela continua aparecendo na cópia, mas deixa de valer: guarde o original. Os arquivos **[SENHA]** precisam ser abertos com a senha e "impressos" como PDF.
+
+Log em `C:\ProgramData\TI\logs\pdf-...txt`.
+
 ## O que tem aqui
 
 | Arquivo | Para quê |
