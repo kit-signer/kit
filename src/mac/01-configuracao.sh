@@ -37,8 +37,15 @@ PASTA_TI="/Users/Shared/TI"
 PROGRAMAS=(
   "PJeOffice Pro|pjeoffice|pjeoffice|copiar"
   "SafeNet (token)|safenet|safenet|abrir"
-  "Driver do token GD|safesign|safesign|abrir"
-  "Driver StarSign|starsign|starsign|abrir"
+  # SafeSign no Mac nao tem instalador: e o proprio tokenadmin.app, que so
+  # funciona dentro de /Applications (procura as bibliotecas em
+  # /Applications/tokenadmin.app/Contents/Frameworks). Fora dali da o erro
+  # "Unable to load libaetpkss.dylib". Por isso: copiar, e buscar "tokenadmin".
+  "Driver do token GD|safesign|tokenadmin|copiar"
+  # Sem "Driver StarSign" no Mac: o antigo Instalar_GD.app (Certisign) so
+  # gravava um Info.plist dentro de /usr/libexec, que o macOS 10.15+ nao deixa
+  # alterar. O leitor CCID do proprio macOS ja reconhece o StarSign CUT;
+  # o que o token G+D precisa e o SafeSign (linha acima).
   "Web Signer|websigner|web ?signer|abrir"
 )
 
@@ -57,7 +64,6 @@ ARQUIVOS=(
   "safesign|mac-safesign-3.6.0-macos10.15.zip|10.15|qualquer|47818b40678dbf107da4355ce2a015ea4e89d1a181093caafb823d2a0801a9c5"
   "safesign|mac-safesign-3.7.0.1-macos11.zip|11|qualquer|6e7a5b041c4539dd0b1d7b780e37549ccdff8d6fa63b30ea0ad697ddc88e85ce"
   "safesign|mac-safesign-3.7.1.0-macos12-intel.zip|12|intel|73a2d9d00fc06b2613733233075ceed2a92ef49cc5afe439af7c7bfc9800a496"
-  "starsign|mac-starsign.zip|0|qualquer|5fe2e8ed898fce5b2ff219ce223d2a0addeeae27d0fd39c1ff217031c146d192"
 )
 
 # Navegadores baixados direto do site oficial.  Formato: Nome|App|URL do .dmg
@@ -81,7 +87,7 @@ WEBSIGNER_XPI="websigner.xpi|2c16afbfb80dff721e2796ffae262093a8558d68ac15b77af5f
 TIPOS_TOKEN=(
   "etoken|token jc|safenet|aladdin;SafeNet eToken;safenet;SafeNet"
   "idprime|gemalto;Thales/Gemalto IDPrime;safenet;SafeNet"
-  "starsign|giesecke|g&d|g\+d|smart ?cafe|sm@rtcafe;G+D StarSign;safesign;SafeSign"
+  "starsign|giesecke|g&d|g\+d|smart ?cafe|sm@rtcafe;G+D StarSign;tokenadmin;SafeSign"
   "watchdata|proxkey;Watchdata;;"
   "epass|feitian;Feitian ePass;;"
 )
